@@ -1,0 +1,19 @@
+# SDN Orchestrator — Dependências Python
+# Instalar com: pip install -r requirements.txt
+#
+# Módulos da biblioteca padrão usados no projeto (não precisam de instalação):
+#   collections, concurrent.futures, dataclasses, argparse, json,
+#   re, subprocess, sys, threading, time
+
+# ── Framework Web ───────────────────────────────────────────────────────────
+fastapi==0.129.0          # Framework REST (rotas /manage/switch, /manage/ip, etc.)
+uvicorn==0.41.0           # Servidor ASGI para o FastAPI
+
+# ── Validação de dados ──────────────────────────────────────────────────────
+pydantic==2.12.5          # Modelos de entrada da API (SwitchRequest, IPBlockRequest)
+
+# ── HTTP / REST ─────────────────────────────────────────────────────────────
+requests==2.32.5          # Chamadas REST ao ODL (fetch_topology, fetch_hosts, etc.)
+
+# ── Grafo de topologia ──────────────────────────────────────────────────────
+networkx==3.6.1           # Grafo de switches, Dijkstra, MST (Spanning Tree)
