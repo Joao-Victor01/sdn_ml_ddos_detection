@@ -259,3 +259,211 @@ class ModelEvaluator:
             print(f"[ModelEvaluator] Curva ROC salva: {path.name}")
         except Exception as e:
             print(f"[ModelEvaluator] Erro ao salvar curva ROC: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Avaliação MULTICLASSE — extensão OCP sem modificar ModelEvaluator binário
+# ══════════════════════════════════════════════════════════════════════════════
+
+from dataclasses import dataclass as _dc
+from ml.config import CLASS_NAMES, OUTPUTS_DIR as _ODIR
+
+
+@_dc
+class MulticlassResult:
+    """
+    Resultado de avaliação multiclasse (3 classes).
+
+    Métricas macro equilibram igualmente as três classes —
+    adequado porque o erro em qualquer classe é igualmente grave.
+    """
+    label:          str
+    accuracy:       float
+    f1_macro:       float
+    precision_macro: float
+    recall_macro:   float
+    mcc:            float
+    gm:             float
+    per_class_f1:   dict          # {nome_classe: f1}
+    per_class_prec: dict          # {nome_classe: precision}
+    per_class_rec:  dict          # {nome_classe: recall}
+    classification_report: str
+
+    def print_summary(self) -> None:
+        w = 62
+        print("\n" + "=" * w)
+        print(f"{'RESULTADOS MULTICLASSE — ' + self.label:^{w}}")
+        print("=" * w)
+        print(f"  Acurácia geral   : {self.accuracy*100:.4f}%")
+        print(f"  F1 Macro         : {self.f1_macro*100:.4f}%")
+        print(f"  Precisão Macro   : {self.precision_macro*100:.4f}%")
+        print(f"  Recall Macro     : {self.recall_macro*100:.4f}%")
+        print(f"  MCC              : {self.mcc:.4f}")
+        print(f"  Geometric Mean   : {self.gm:.4f}")
+        print(f"\n  ── Por classe ──")
+        for cls in CLASS_NAMES:
+            f1   = self.per_class_f1.get(cls,   0.0)
+            prec = self.per_class_prec.get(cls, 0.0)
+            rec  = self.per_class_rec.get(cls,  0.0)
+            print(f"  {cls:<20}: F1={f1*100:.2f}%  "
+                  f"P={prec*100:.2f}%  R={rec*100:.2f}%")
+        print("=" * w)
+        print(f"\n{self.classification_report}")
+
+
+class MulticlassEvaluator:
+    """
+    Avalia modelos de classificação triclasse (Benigno / Externo / Interno).
+
+    Extensão de ModelEvaluator para 3 classes — segue OCP: não modifica
+    a classe binária existente, apenas adiciona novo comportamento.
+
+    Uso:
+        ev  = MulticlassEvaluator()
+        res = ev.evaluate(model, X_test, y_test, label="Baseline")
+        ev.compare(res_baseline, res_tuned)
+    """
+
+    def __init__(self, save_plots: bool = True) -> None:
+        self._save   = save_plots
+        _ODIR.mkdir(parents=True, exist_ok=True)
+
+    def evaluate(
+        self,
+        model,
+        X_test:  np.ndarray,
+        y_test:  np.ndarray,
+        label:   str = "Modelo",
+    ) -> MulticlassResult:
+        """Calcula todas as métricas multiclasse no test_set."""
+        from sklearn.metrics import (
+            accuracy_score, f1_score, precision_score,
+            recall_score, matthews_corrcoef, classification_report,
+            confusion_matrix,
+        )
+        from imblearn.metrics import geometric_mean_score
+
+        y_pred = model.predict(X_test)
+
+        acc  = float(accuracy_score(y_test, y_pred))
+        f1m  = float(f1_score(y_test, y_pred, average="macro", zero_division=0))
+        prm  = float(precision_score(y_test, y_pred, average="macro", zero_division=0))
+        recm = float(recall_score(y_test, y_pred, average="macro", zero_division=0))
+        mcc  = float(matthews_corrcoef(y_test, y_pred))
+        gm   = float(geometric_mean_score(y_test, y_pred, average="macro"))
+
+        # Métricas por classe
+        f1_per   = f1_score(y_test, y_pred, average=None, zero_division=0)
+        prec_per = precision_score(y_test, y_pred, average=None, zero_division=0)
+        rec_per  = recall_score(y_test, y_pred, average=None, zero_division=0)
+        n_cls    = len(CLASS_NAMES)
+        pcf1  = {CLASS_NAMES[i]: float(f1_per[i])   for i in range(min(n_cls, len(f1_per)))}
+        pcpre = {CLASS_NAMES[i]: float(prec_per[i]) for i in range(min(n_cls, len(prec_per)))}
+        pcrec = {CLASS_NAMES[i]: float(rec_per[i])  for i in range(min(n_cls, len(rec_per)))}
+
+        report = classification_report(
+            y_test, y_pred,
+            target_names=CLASS_NAMES,
+            zero_division=0,
+        )
+
+        result = MulticlassResult(
+            label=label,
+            accuracy=acc,
+            f1_macro=f1m,
+            precision_macro=prm,
+            recall_macro=recm,
+            mcc=mcc,
+            gm=gm,
+            per_class_f1=pcf1,
+            per_class_prec=pcpre,
+            per_class_rec=pcrec,
+            classification_report=report,
+        )
+        result.print_summary()
+
+        if self._save:
+            cm   = confusion_matrix(y_test, y_pred)
+            slug = label.lower().replace(" ", "_")
+            self._plot_cm(cm, label, slug)
+            self._plot_per_class_bars(result, slug)
+
+        return result
+
+    def compare(self, a: MulticlassResult, b: MulticlassResult) -> None:
+        """Tabela comparativa entre dois modelos."""
+        w = 68
+        print("\n" + "=" * w)
+        print(f"{'COMPARAÇÃO MULTICLASSE':^{w}}")
+        print("=" * w)
+        print(f"{'Métrica':<24} {a.label:>20} {b.label:>20}")
+        print("-" * w)
+        pairs = [
+            ("Acurácia (%)",      a.accuracy*100,       b.accuracy*100,       True),
+            ("F1 Macro (%)",      a.f1_macro*100,       b.f1_macro*100,       True),
+            ("Precisão Macro (%)",a.precision_macro*100, b.precision_macro*100, True),
+            ("Recall Macro (%)",  a.recall_macro*100,   b.recall_macro*100,   True),
+            ("MCC",               a.mcc,                b.mcc,                False),
+            ("Geometric Mean",    a.gm,                 b.gm,                 False),
+        ]
+        for name, va, vb, is_pct in pairs:
+            fmt = ".2f" if is_pct else ".4f"
+            print(f"  {name:<22} {va:>20{fmt}} {vb:>20{fmt}}")
+        print("-" * w)
+        print(f"\n  ── Por classe (F1) ──")
+        for cls in CLASS_NAMES:
+            va = a.per_class_f1.get(cls, 0.0) * 100
+            vb = b.per_class_f1.get(cls, 0.0) * 100
+            diff = vb - va
+            print(f"  {cls:<22} {va:>20.2f}% {vb:>20.2f}%  ({diff:+.2f} pp)")
+        print("=" * w)
+
+    # ── plots ──────────────────────────────────────────────────────────────────
+
+    def _plot_cm(self, cm: np.ndarray, label: str, slug: str) -> None:
+        try:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ConfusionMatrixDisplay(
+                confusion_matrix=cm,
+                display_labels=CLASS_NAMES,
+            ).plot(values_format=".0f", ax=ax, cmap="Blues")
+            ax.set_title(f"Matriz de Confusão 3×3 — {label}")
+            plt.tight_layout()
+            path = _ODIR / f"cm_multi_{slug}.png"
+            plt.savefig(path, dpi=150, bbox_inches="tight")
+            plt.close()
+            print(f"[MulticlassEvaluator] CM salva → {path.name}")
+        except Exception as e:
+            print(f"[MulticlassEvaluator] Erro CM: {e}")
+
+    def _plot_per_class_bars(self, result: MulticlassResult, slug: str) -> None:
+        try:
+            import matplotlib.pyplot as plt
+            classes = CLASS_NAMES
+            x = np.arange(len(classes))
+            w = 0.25
+            f1s   = [result.per_class_f1.get(c,   0)*100 for c in classes]
+            precs = [result.per_class_prec.get(c, 0)*100 for c in classes]
+            recs  = [result.per_class_rec.get(c,  0)*100 for c in classes]
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.bar(x - w, precs, w, label="Precisão",  color="#4C72B0", alpha=0.85)
+            ax.bar(x,     f1s,   w, label="F1-Score",  color="#DD8452", alpha=0.85)
+            ax.bar(x + w, recs,  w, label="Recall",    color="#55A868", alpha=0.85)
+
+            for xi, (p, f, r) in zip(x, zip(precs, f1s, recs)):
+                for off, val in [(-w, p), (0, f), (w, r)]:
+                    ax.text(xi + off, val + 0.3, f"{val:.1f}", ha="center",
+                            va="bottom", fontsize=8)
+
+            ax.set_xticks(x); ax.set_xticklabels(classes)
+            ax.set_ylabel("Score (%)")
+            ax.set_title(f"Métricas por Classe — {result.label}")
+            ax.legend(); ax.set_ylim(0, 108); ax.grid(axis="y", alpha=0.3)
+            plt.tight_layout()
+            path = _ODIR / f"per_class_{slug}.png"
+            plt.savefig(path, dpi=150, bbox_inches="tight")
+            plt.close()
+            print(f"[MulticlassEvaluator] Barras por classe → {path.name}")
+        except Exception as e:
+            print(f"[MulticlassEvaluator] Erro barras: {e}")

@@ -484,3 +484,139 @@ def fl_training_stop():
     if mc is None:
         return {"status": "error", "message": "MetricsCollector não inicializado"}
     return mc.stop_fl_session()
+
+
+# =============================================================================
+# Detecção Multiclasse — HCF (Hop Count Filtering)
+# =============================================================================
+
+class ClassifyRequest(BaseModel):
+    src_ip:       str
+    ttl_observed: int
+    flow_pkts_s:  float
+    ttl_initial:  int = 64   # 64=Linux, 128=Windows
+
+
+@app.post("/detect/classify")
+def detect_classify(req: ClassifyRequest):
+    """
+    Classifica um fluxo em: Benigno (0) / Ataque Externo (1) / Zumbi Interno (2).
+
+    Usa Hop Count Filtering (HCF): analisa o TTL do pacote para inferir a
+    distância topológica entre o host de origem e o controlador SDN.
+
+    Parâmetros:
+      - src_ip       : IP de origem do fluxo suspeito
+      - ttl_observed : TTL observado no pacote ao chegar ao switch de borda
+      - flow_pkts_s  : taxa de pacotes por segundo do fluxo
+      - ttl_initial  : TTL esperado na origem (64=Linux, 128=Windows)
+
+    Lógica:
+      - Taxa baixa (< 10.000 pps)  → Benigno
+      - hop_count ≥ 10             → Externo (cruzou internet)
+      - hop_count < 10 + alta taxa → Zumbi Interno (host comprometido)
+    """
+    from orchestrator.application.hcf import HCFAnalyzer
+    analyzer = HCFAnalyzer()
+    result   = analyzer.classify(
+        src_ip=req.src_ip,
+        ttl_observed=req.ttl_observed,
+        flow_pkts_s=req.flow_pkts_s,
+        ttl_initial=req.ttl_initial,
+    )
+    return result.to_dict()
+
+
+class ClassifyBatchRequest(BaseModel):
+    flows: list
+
+
+@app.post("/detect/classify/batch")
+def detect_classify_batch(req: ClassifyBatchRequest):
+    """
+    Classifica múltiplos fluxos em lote.
+
+    Cada item da lista deve conter: src_ip, ttl_observed, flow_pkts_s
+    (e opcionalmente ttl_initial, padrão 64).
+
+    Retorna lista com classificação HCF de cada fluxo.
+    """
+    from orchestrator.application.hcf import HCFAnalyzer
+    analyzer = HCFAnalyzer()
+    results  = analyzer.classify_batch(req.flows)
+    return {"results": [r.to_dict() for r in results]}
+
+
+# =============================================================================
+# Mitigação Multiclasse — IP Traceback + Isolamento Cirúrgico
+# =============================================================================
+
+@app.post("/mitigation/traceback/{ip}")
+def mitigation_traceback(ip: str):
+    """
+    Rastreia o caminho de ataque de um IP suspeito até o controlador.
+
+    Usa o grafo NetworkX da topologia SDN + Dijkstra para calcular o
+    caminho completo desde o switch de borda do host até o destino.
+
+    Retorna:
+      - src_switch  : switch de borda onde o host está conectado
+      - src_port    : porta do switch onde o host está conectado
+      - attack_path : lista de switches no caminho de ataque
+      - found       : True se o IP foi localizado na topologia SDN
+    """
+    from orchestrator.application.traceback import IPTraceback
+    tb     = IPTraceback()
+    result = tb.traceback(ip)
+    return result.to_dict()
+
+
+@app.post("/mitigation/isolate/{ip}")
+def mitigation_isolate(ip: str):
+    """
+    Isola cirurgicamente um zumbi interno.
+
+    Instala um flow DROP de alta prioridade (65400) APENAS na porta de borda
+    onde o host infectado está conectado — sem afetar nenhum outro host no
+    mesmo switch ou VLAN.
+
+    Diferente de POST /manage/ip (DROP global em TODOS os switches):
+      - /manage/ip       → proteção ampla, bloqueia o IP em toda a topologia
+      - /mitigation/isolate → cirúrgico, bloqueia só na porta do host infectado
+
+    Pré-condição: o host deve estar registrado no SDN (visto pelo controlador).
+    Recomendado para: zumbis internos classificados pelo HCF como INTERNAL (2).
+    """
+    from orchestrator.application.traceback import IPTraceback
+    tb = IPTraceback()
+    return tb.isolate(ip)
+
+
+@app.delete("/mitigation/isolate/{ip}")
+def mitigation_release(ip: str):
+    """
+    Libera um host previamente isolado.
+
+    Remove o flow de isolamento do switch de borda. Use após confirmar que
+    o host foi desinfectado ou identificado como falso positivo.
+    """
+    from orchestrator.application.traceback import IPTraceback
+    tb = IPTraceback()
+    return tb.release(ip)
+
+
+@app.get("/mitigation/status")
+def mitigation_status():
+    """
+    Lista todos os hosts atualmente isolados e seus metadados.
+
+    Retorna para cada host isolado:
+      - ip      : endereço IP do host
+      - mac     : endereço MAC
+      - switch  : switch de borda onde o isolamento foi aplicado
+      - port    : porta onde o host está conectado
+      - active  : True se o isolamento ainda está ativo
+    """
+    from orchestrator.application.traceback import IPTraceback
+    tb = IPTraceback()
+    return {"isolated_hosts": tb.list_isolated()}

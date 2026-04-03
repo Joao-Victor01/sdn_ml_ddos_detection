@@ -112,7 +112,19 @@ class ModelTrainer:
             random_state=self._random_state,
         )
 
-        metrics = ["accuracy", "f1", "precision", "recall"]
+        # Métricas adaptadas ao scoring configurado:
+        # Para multiclasse usa *_macro; para binário usa métricas padrão.
+        if "macro" in self._cv_scoring or "weighted" in self._cv_scoring:
+            suffix  = self._cv_scoring.split("_", 1)[1]  # "macro" ou "weighted"
+            metrics = [
+                "accuracy",
+                f"f1_{suffix}",
+                f"precision_{suffix}",
+                f"recall_{suffix}",
+            ]
+        else:
+            metrics = ["accuracy", self._cv_scoring, "precision", "recall"]
+
         results: dict[str, tuple[float, float]] = {}
 
         print(f"\n[ModelTrainer] Validação Cruzada ({self._cv_n_splits}-fold) — conjunto de treino:")
@@ -129,7 +141,7 @@ class ModelTrainer:
             )
             mean, std = float(scores.mean()), float(scores.std())
             results[metric] = (mean, std)
-            print(f"  {metric:<12}: {mean:.4f} ± {std:.4f}")
+            print(f"  {metric:<18}: {mean:.4f} ± {std:.4f}")
 
         print("-" * 50)
         return results

@@ -1,0 +1,80 @@
+[
+  {
+    "run_id": "multi_baseline_20260403_1744",
+    "timestamp": "2026-04-03T17:44:13.683093",
+    "label": "MLP Baseline",
+    "metrics": {
+      "accuracy": 0.996165,
+      "precision": 0.93637,
+      "recall": 0.994245,
+      "f1": 0.962338,
+      "mcc": 0.991748,
+      "gm": 0.995538,
+      "roc_auc": 0.0
+    },
+    "confusion_matrix": {
+      "tp": 0,
+      "tn": 0,
+      "fp": 0,
+      "fn": 0
+    },
+    "metrics_pct": {
+      "accuracy_pct": 99.6165,
+      "precision_pct": 93.637,
+      "recall_pct": 99.4245,
+      "f1_pct": 96.2338
+    },
+    "params": {
+      "hidden_layer_sizes": "(128, 64)",
+      "solver": "adam",
+      "activation": "relu",
+      "multiclass": true,
+      "tuned": false
+    },
+    "dataset_info": {
+      "n_train_clean": 69439,
+      "n_features": 12,
+      "n_classes": 3
+    },
+    "notes": "Multiclasse 3-classes"
+  },
+  {
+    "run_id": "multi_baseline_20260403_1751",
+    "timestamp": "2026-04-03T17:51:09.531672",
+    "label": "MLP Baseline",
+    "metrics": {
+      "accuracy": 0.996165,
+      "precision": 0.93637,
+      "recall": 0.994245,
+      "f1": 0.962338,
+      "mcc": 0.991748,
+      "gm": 0.995538,
+      "roc_auc": 0.0
+    },
+    "confusion_matrix": {
+      "tp": 0,
+      "tn": 0,
+      "fp": 0,
+      "fn": 0
+    },
+    "metrics_pct": {
+      "accuracy_pct": 99.6165,
+      "precision_pct": 93.637,
+      "recall_pct": 99.4245,
+      "f1_pct": 96.2338
+    },
+    "params": {
+      "hidden_layer_sizes": "(128, 64)",
+      "solver": "adam",
+      "activation": "relu",
+      "multiclass": true,
+      "tuned": false
+    },
+    "dataset_info": {
+      "n_train_clean": 69439,
+      "n_features": 12,
+      "n_classes": 3
+    },
+    "notes": "Multiclasse 3-classes"
+  }
+]

@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from imblearn.over_sampling import SMOTE
 
-from ml.config import RANDOM_STATE
+from ml.config import RANDOM_STATE, CLASS_NAMES
 
 
 class ClassBalancer:
@@ -57,7 +57,7 @@ class ClassBalancer:
 
         print("[ClassBalancer] Distribuição ANTES do SMOTE:")
         for cls, cnt in counts_before.items():
-            label = "Benigno" if cls == 0 else "Ataque DDoS"
+            label = CLASS_NAMES[cls] if cls < len(CLASS_NAMES) else f"Classe {cls}"
             print(f"  {cls} ({label}): {cnt:>7,}  ({pcts_before[cls]:.1f}%)")
 
         X_res, y_res = self._smote.fit_resample(X, y_arr)
@@ -67,7 +67,7 @@ class ClassBalancer:
 
         print("[ClassBalancer] Distribuição DEPOIS do SMOTE:")
         for cls, cnt in counts_after.items():
-            label = "Benigno" if cls == 0 else "Ataque DDoS"
+            label = CLASS_NAMES[cls] if cls < len(CLASS_NAMES) else f"Classe {cls}"
             print(f"  {cls} ({label}): {cnt:>7,}  ({pcts_after[cls]:.1f}%)")
 
         print(f"[ClassBalancer] Shape treino balanceado: {X_res.shape}")

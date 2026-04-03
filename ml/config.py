@@ -75,3 +75,37 @@ PAPER_METRICS: dict = {
     "recall":    99.97,
     "f1":        99.98,
 }
+
+# ── Configurações do pipeline multiclasse ──────────────────────────────────────
+# Mapeamento de classes (0=Benigno, 1=Externo, 2=Interno/Zumbi)
+CLASS_NAMES:  list[str] = ["Benigno", "Ataque Externo", "Zumbi Interno"]
+CLASS_LABELS: list[int] = [0, 1, 2]
+N_CLASSES:    int       = 3
+
+# Scoring multiclasse: macro equilibra as três classes igualmente
+CV_SCORING_MULTI: str = "f1_macro"
+
+# ── Engenharia de labels (heurística de separação Externo vs. Interno) ─────────
+# Critérios para classificar um ataque DDoS como "Externo":
+#   1. Protocol = 0 (ICMP/raw — ferramenta de flood trivial)
+#   2. OU pacotes uniformes (Pkt Len Std ≈ 0) E fluxo muito curto
+# O complemento dos ataques que não se enquadram → "Zumbi Interno"
+EXTERNAL_PROTOCOL_ID:      int   = 0       # protocolo indicativo de flood externo
+EXTERNAL_DURATION_THRESH:  float = 500.0   # µs — fluxos < 500µs = rajada externa
+EXTERNAL_STD_THRESH:       float = 1e-3    # Pkt Len Std ≈ 0 → pacotes uniformes
+
+# ── Engenharia de features HCF (Hop Count Filtering) ──────────────────────────
+# Distribuições realistas de TTL por tipo de tráfego (µs estimados de SO padrão):
+#   Externo: TTL inicial = 64 (Linux) → chega ≈ 48 após ~16 hops internet
+#   Interno: TTL inicial = 64         → chega ≈ 62 após 1-2 hops LAN
+#   Benigno: TTL inicial = 64         → chega ≈ 61 (variação normal LAN)
+TTL_EXTERNAL_MEAN: float = 48.0;  TTL_EXTERNAL_STD: float = 10.0
+TTL_INTERNAL_MEAN: float = 62.0;  TTL_INTERNAL_STD: float = 2.0
+TTL_BENIGN_MEAN:   float = 61.0;  TTL_BENIGN_STD:   float = 3.0
+TTL_LAN_EXPECTED:  int   = 64     # TTL esperado para host local sem hops
+
+# HCF: diferença de TTL que indica origem externa (passou por muitos roteadores)
+HCF_EXTERNAL_THRESHOLD: int = 10   # TTL_LAN_EXPECTED - TTL < 10 → interno
+
+# ── Modelos multiclasse (diretório separado para não sobrescrever binário) ──────
+MODELS_DIR_MULTI = MODELS_DIR.parent / "models_multiclass"
