@@ -23,6 +23,9 @@ Referência: plano_triclasse_insdn_v4.md + guia_boas_praticas_ml.md
 
 from __future__ import annotations
 
+import matplotlib
+matplotlib.use("Agg")  # backend não-interativo — obrigatório com n_jobs=-1
+
 import warnings
 import joblib
 import numpy as np
@@ -169,6 +172,15 @@ def run_triclass_pipeline(
     X_test  = eng.transform(X_test)
 
     computed_feats = [f for f in BEHAVIORAL_FEATURES if f in X_train.columns]
+
+    # Guarda: feature engineering não deve introduzir NaN
+    nan_train = X_train.isnull().sum().sum()
+    nan_test  = X_test.isnull().sum().sum()
+    if nan_train or nan_test:
+        bad_cols = X_train.columns[X_train.isnull().any()].tolist()
+        raise ValueError(
+            f"NaN introduzido pela feature engineering — colunas: {bad_cols}"
+        )
 
     # ── Etapa 8: VarianceThreshold (fit somente no treino) ────────────────────
     _step(8, "VarianceThreshold (fit somente no treino)")

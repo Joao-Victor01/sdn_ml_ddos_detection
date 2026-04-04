@@ -79,7 +79,7 @@ def computar_features_comportamentais(df: pd.DataFrame) -> pd.DataFrame:
     df["asymmetry_bytes"] = df[_FWDB] / (df[_FWDB] + df[_BWDB] + _EPS)
     df["pkt_rate"]        = (df[_FWD] + df[_BWD]) / (df[_DUR]  + _EPS)
     df["pkt_uniformity"]  = 1.0 / (df[_STD] + 1.0)
-    df["log_duration"]    = np.log1p(df[_DUR])
+    df["log_duration"]    = np.log1p(np.maximum(df[_DUR], 0.0))
 
     if _ACT in df.columns:
         df["fwd_active_ratio"] = df[_ACT] / (df[_FWD] + _EPS)

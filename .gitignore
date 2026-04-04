@@ -1,3 +1,6 @@
 venv
 .claude
 models/*
+*.pyc
+.pytest_cache__pycache__/
+*.pyc
