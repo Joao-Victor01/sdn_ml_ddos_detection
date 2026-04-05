@@ -1,11 +1,11 @@
 """
-Limpeza e preparação dos dados de treino.
+Limpeza e preparacao dos dados apos o split.
 
-SRP: este módulo lida exclusivamente com a remoção de ruído dos dados
-(duplicatas, infinitos, valores ausentes).
-
-Regra de ouro: todas as operações de fit são realizadas APENAS no
-conjunto de treino. O teste recebe apenas .transform().
+Responsabilidades:
+  - remover duplicatas
+  - substituir infinitos por NaN
+  - tratar valores negativos impossiveis por dominio
+  - imputar ausentes com estatisticas aprendidas apenas no treino
 """
 
 from __future__ import annotations
@@ -14,25 +14,23 @@ import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
 
-from ml.config import IMPUTER_STRATEGY
+from ml.config import IMPUTER_STRATEGY, NON_NEGATIVE_FEATURES
 
 
 class DataCleaner:
     """
-    Remove duplicatas, trata infinitos e imputa valores ausentes.
-
-    Uso correto (evita data leakage):
-        cleaner = DataCleaner()
-        X_train, y_train = cleaner.fit_transform(X_train, y_train)
-        X_test            = cleaner.transform(X_test)
+    Limpa conjuntos de treino e teste sem vazar informacao do test_set.
     """
 
-    def __init__(self, strategy: str = IMPUTER_STRATEGY) -> None:
+    def __init__(
+        self,
+        strategy: str = IMPUTER_STRATEGY,
+        non_negative_columns: list[str] | None = None,
+    ) -> None:
         self._imputer: SimpleImputer = SimpleImputer(strategy=strategy)
         self._columns: list[str] = []
-        self._fitted: bool = False
-
-    # ── API pública ────────────────────────────────────────────────────────────
+        self._non_negative_columns = non_negative_columns or NON_NEGATIVE_FEATURES
+        self._fitted = False
 
     def fit_transform(
         self,
@@ -40,75 +38,89 @@ class DataCleaner:
         y: pd.Series,
     ) -> tuple[pd.DataFrame, pd.Series]:
         """
-        Aplica limpeza completa ao conjunto de TREINO.
-
-        Etapas (nesta ordem):
-          1. Remove duplicatas (inclui y para consistência)
-          2. Substitui Inf/-Inf por NaN
-          3. Fit + transform do imputador de medianas
-
-        Returns
-        -------
-        X_clean : pd.DataFrame
-        y_clean : pd.Series  (alinhado com X após remoção de duplicatas)
+        Limpa o conjunto de treino e ajusta o imputador.
         """
-        self._columns = X.columns.tolist()
+        self._columns = [col for col in X.columns if col != "__row_hash__"]
+        X_clean, y_clean, dupes_removed = self._drop_duplicates(X, y)
 
-        # 1. Duplicatas — reconstruir temporariamente com target
-        df_tmp = X.copy()
-        df_tmp["__target__"] = y.values
-
-        before = len(df_tmp)
-        df_tmp = df_tmp.drop_duplicates(keep="first")
-        after  = len(df_tmp)
-        print(f"[DataCleaner] Duplicatas removidas: {before - after:,} "
-              f"({before:,} → {after:,})")
-
-        X_clean = df_tmp.drop(columns=["__target__"])
-        y_clean = pd.Series(df_tmp["__target__"].values, name=y.name)
-
-        # 2. Infinitos → NaN
-        X_clean = X_clean.replace([np.inf, -np.inf], np.nan)
-        inf_total = (before - after)  # já contabilizado
-        nan_count = X_clean.isnull().sum().sum()
-        print(f"[DataCleaner] NaN após substituição de Inf: {nan_count:,}")
-
-        # 3. Imputação (fit SOMENTE no treino)
+        X_clean = self._sanitize_numeric_noise(X_clean)
         self._imputer.fit(X_clean)
         X_imputed = pd.DataFrame(
             self._imputer.transform(X_clean),
             columns=self._columns,
-        )
-        self._fitted = True
+            index=X_clean.index,
+        ).reset_index(drop=True)
+        y_clean = y_clean.reset_index(drop=True)
 
-        print(f"[DataCleaner] NaN após imputação (treino): "
-              f"{X_imputed.isnull().sum().sum()}")
+        self._fitted = True
+        print(f"[DataCleaner] Duplicatas removidas no treino: {dupes_removed:,}")
         print(f"[DataCleaner] Shape final do treino: {X_imputed.shape}")
+        print(f"[DataCleaner] NaN restantes no treino: {int(X_imputed.isnull().sum().sum())}")
 
         return X_imputed, y_clean
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+    def transform(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series | None = None,
+    ) -> pd.DataFrame | tuple[pd.DataFrame, pd.Series]:
         """
-        Aplica apenas a transformação ao conjunto de TESTE.
-
-        Não faz fit — usa os parâmetros aprendidos em fit_transform().
+        Aplica a limpeza ao teste usando o imputador ajustado no treino.
         """
         if not self._fitted:
             raise RuntimeError(
                 "DataCleaner: chame fit_transform() no treino antes de transform()."
             )
 
-        X_clean = X.replace([np.inf, -np.inf], np.nan)
+        if y is not None:
+            X, y, dupes_removed = self._drop_duplicates(X, y)
+            print(f"[DataCleaner] Duplicatas removidas no teste: {dupes_removed:,}")
 
+        X_clean = self._sanitize_numeric_noise(X)
         X_imputed = pd.DataFrame(
             self._imputer.transform(X_clean),
             columns=self._columns,
-        )
-        print(f"[DataCleaner] NaN após imputação (teste): "
-              f"{X_imputed.isnull().sum().sum()}")
-        return X_imputed
+            index=X_clean.index,
+        ).reset_index(drop=True)
+        print(f"[DataCleaner] NaN restantes apos imputacao: {int(X_imputed.isnull().sum().sum())}")
+
+        if y is None:
+            return X_imputed
+        return X_imputed, y.reset_index(drop=True)
 
     @property
     def imputer(self) -> SimpleImputer:
-        """Acesso ao imputador fitado para persistência."""
         return self._imputer
+
+    def _drop_duplicates(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+    ) -> tuple[pd.DataFrame, pd.Series, int]:
+        df_tmp = X.copy()
+        df_tmp["__target__"] = y.values
+        before = len(df_tmp)
+        if "__row_hash__" in df_tmp.columns:
+            df_tmp = df_tmp.drop_duplicates(subset=["__row_hash__", "__target__"], keep="first")
+            df_tmp = df_tmp.drop(columns=["__row_hash__"])
+        else:
+            df_tmp = df_tmp.drop_duplicates(keep="first")
+        after = len(df_tmp)
+        X_dedup = df_tmp.drop(columns=["__target__"])
+        y_dedup = pd.Series(df_tmp["__target__"].values, name=y.name)
+        return X_dedup, y_dedup, before - after
+
+    def _sanitize_numeric_noise(self, X: pd.DataFrame) -> pd.DataFrame:
+        X_clean = X.copy()
+        X_clean = X_clean.replace([np.inf, -np.inf], np.nan)
+
+        invalid_negative_total = 0
+        for col in self._non_negative_columns:
+            if col in X_clean.columns:
+                mask = X_clean[col] < 0
+                invalid_negative_total += int(mask.sum())
+                X_clean.loc[mask, col] = np.nan
+
+        print(f"[DataCleaner] Valores negativos invalidos -> NaN: {invalid_negative_total:,}")
+        print(f"[DataCleaner] NaN antes da imputacao: {int(X_clean.isnull().sum().sum())}")
+        return X_clean

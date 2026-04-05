@@ -1,64 +1,55 @@
 """
-Pipeline principal de detecção de DDoS em SDN com MLP.
+Pipeline principal de classificacao multiclasse para o InSDN.
 
-Orquestra todas as etapas do workflow conforme as boas práticas do curso
-(Thaís Gaudencio, UFPB/LUMO) e o plano de implementação baseado em
-Mehmood et al. (PLoS ONE, 2025).
-
-Ordem rigorosa do pipeline (nenhuma etapa pode ser invertida):
-  1.  Configurações e reprodutibilidade
-  2.  Carregamento do dataset InSDN8
-  3.  EDA exploratória (sem modificar os dados)
-  4.  ⚠️  SPLIT treino/teste ANTES de qualquer transformação  ⚠️
-  5.  Limpeza (duplicatas, Inf → NaN, imputação) — somente no treino
-  6.  Seleção de features (VarianceThreshold + SHAP) — somente no treino
-  7.  Escalonamento (StandardScaler.fit no treino) — transform no teste
-  8.  Balanceamento SMOTE — somente no treino
-  9.  Treinamento MLP baseline + validação cruzada
-  10. Avaliação baseline no test_set
-  11. Hyperparameter Tuning (RandomizedSearchCV no treino)
-  12. Avaliação final do modelo otimizado no test_set
-  13. Comparação baseline vs. otimizado vs. artigo
-  14. Salvamento de todos os artefatos
-
-Avaliação do dataset insdn8_ddos_binary_0n1d.csv:
-  ✓ Compatível com o plano — subconjunto do InSDN com 8 features pré-selecionadas
-  ✓ Label já binarizada (0=Benigno, 1=Ataque DDoS)
-  ✓ ~190.366 instâncias — volume adequado para MLP
-  ⚠ Fortemente desbalanceado (maioria classe 1) — SMOTE obrigatório
-  ⚠ Apenas 8 features (vs. 84 do InSDN original) — seleção SHAP será feita,
-    mas sem redução de dimensionalidade significativa esperada
+Fluxo:
+  1. configuracoes e reprodutibilidade
+  2. carregamento e EDA do dataset consolidado
+  3. split treino/teste antes de qualquer transformacao
+  4. limpeza do treino e aplicacao consistente ao teste
+  5. selecao de features por variancia + SHAP
+  6. escalonamento
+  7. balanceamento SMOTE apenas no treino
+  8. treinamento do baseline e validacao cruzada
+  9. avaliacao em treino/teste para diagnostico de overfitting
+  10. tuning opcional
+  11. salvamento de artefatos, metricas e graficos auxiliares
 """
 
+from __future__ import annotations
+
 import warnings
-warnings.filterwarnings("ignore")
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.model_selection import train_test_split
 
 from ml.config import (
-    RANDOM_STATE,
-    TEST_SIZE,
-    TARGET_COL,
+    DATASET_NAME,
     OUTPUTS_DIR,
+    RANDOM_STATE,
+    TARGET_DECODING,
+    TARGET_NAMES,
+    TEST_SIZE,
 )
 from ml.data.loader import InSDNLoader
+from ml.evaluation.evaluator import ModelEvaluator
+from ml.features.selector import FeatureSelector
+from ml.persistence.model_io import ModelIO, PipelineArtifacts
+from ml.preprocessing.balancer import ClassBalancer
 from ml.preprocessing.cleaner import DataCleaner
 from ml.preprocessing.scaler import FeatureScaler
-from ml.preprocessing.balancer import ClassBalancer
-from ml.features.selector import FeatureSelector
 from ml.training.trainer import ModelTrainer
 from ml.training.tuner import HyperparameterTuner
-from ml.evaluation.evaluator import ModelEvaluator
-from ml.persistence.model_io import ModelIO, PipelineArtifacts
 from ml.utils.metrics_logger import MetricsLogger
+from ml.utils.training_diagnostics import TrainingDiagnostics
 
+warnings.filterwarnings("ignore")
 
-# ── Reprodutibilidade global ───────────────────────────────────────────────────
 np.random.seed(RANDOM_STATE)
 pd.set_option("display.max_columns", 7000)
-pd.set_option("display.max_rows", 90000)
+pd.set_option("display.max_rows", 200)
 
 
 def run_pipeline(
@@ -66,130 +57,158 @@ def run_pipeline(
     run_eda: bool = True,
     verbose: bool = True,
     run_id: str | None = None,
+    sample_size: int | None = None,
 ) -> None:
-    """
-    Executa o pipeline completo de treinamento e avaliação.
-
-    Parameters
-    ----------
-    run_tuning : bool — se True, executa o hyperparameter tuning (mais lento)
-    run_eda    : bool — se True, exibe a análise exploratória textual
-    verbose    : bool — nível de verbosidade geral
-    """
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    print("=" * 60)
-    print("  Pipeline: Detecção de DDoS em SDN com MLP")
-    print("  Dataset : InSDN8 (insdn8_ddos_binary_0n1d.csv)")
-    print("  Baseline: Mehmood et al. (PLoS ONE, 2025)")
-    print("=" * 60)
 
-    # ── Etapa 1: Configurações ─────────────────────────────────────────────────
-    print(f"\n[1/14] Configurações")
+    print("=" * 72)
+    print("  Pipeline: Classificacao Multiclasse de Trafego SDN com MLP")
+    print(f"  Dataset : {DATASET_NAME}")
+    print("  Classes : 0=Normal | 1=Flooding | 2=Intrusao")
+    print("=" * 72)
+
+    print("\n[1/11] Configuracoes")
     print(f"  RANDOM_STATE : {RANDOM_STATE}")
     print(f"  TEST_SIZE    : {TEST_SIZE} (70/30)")
-    print(f"  TARGET_COL   : {TARGET_COL}")
+    print(f"  SAMPLE_SIZE  : {sample_size if sample_size else 'dataset completo'}")
 
-    # ── Etapa 2: Carregamento ──────────────────────────────────────────────────
-    print(f"\n[2/14] Carregando dataset...")
+    print("\n[2/11] Carregando dataset...")
     loader = InSDNLoader()
-    X, y   = loader.load()
+    X, y = loader.load(sample_size=sample_size)
 
-    # ── Etapa 3: EDA ──────────────────────────────────────────────────────────
     if run_eda:
-        print(f"\n[3/14] EDA (sem modificar os dados)...")
-        loader.describe()
-    else:
-        print(f"\n[3/14] EDA ignorada (run_eda=False)")
+        print("\n[2b/11] EDA (sem modificar os dados)...")
+        loader.describe(sample_size=sample_size)
 
-    # ── Etapa 4: SPLIT (ANTES de qualquer transformação) ──────────────────────
-    print(f"\n[4/14] Split estratificado {int((1-TEST_SIZE)*100)}/{int(TEST_SIZE*100)}...")
+    print(f"\n[3/11] Split estratificado {int((1 - TEST_SIZE) * 100)}/{int(TEST_SIZE * 100)}...")
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y,
+        X,
+        y,
         test_size=TEST_SIZE,
         random_state=RANDOM_STATE,
         shuffle=True,
-        stratify=y,       # OBRIGATÓRIO: preserva proporção de classes
+        stratify=y,
     )
     print(f"  Train: {X_train.shape} | Test: {X_test.shape}")
-    print(f"  Distribuição treino:\n  {y_train.value_counts(normalize=True).mul(100).round(2).to_dict()}")
-    print(f"  Distribuição teste :\n  {y_test.value_counts(normalize=True).mul(100).round(2).to_dict()}")
+    print(
+        f"  Distribuicao treino: "
+        f"{y_train.value_counts(normalize=True).sort_index().mul(100).round(2).to_dict()}"
+    )
+    print(
+        f"  Distribuicao teste : "
+        f"{y_test.value_counts(normalize=True).sort_index().mul(100).round(2).to_dict()}"
+    )
 
-    # Resetar índices para evitar problemas de alinhamento nas etapas seguintes
-    X_train = X_train.reset_index(drop=True)
-    X_test  = X_test.reset_index(drop=True)
-    y_train = y_train.reset_index(drop=True)
-    y_test  = y_test.reset_index(drop=True)
+    print("\n[4/11] Limpeza e preparacao...")
+    cleaner = DataCleaner()
+    X_train, y_train = cleaner.fit_transform(X_train.reset_index(drop=True), y_train.reset_index(drop=True))
+    X_test, y_test = cleaner.transform(
+        X_test.reset_index(drop=True),
+        y_test.reset_index(drop=True),
+    )
 
-    # ── Etapa 5: Limpeza (somente no treino) ──────────────────────────────────
-    print(f"\n[5/14] Limpeza e preparação (somente no treino)...")
-    cleaner          = DataCleaner()
-    X_train, y_train = cleaner.fit_transform(X_train, y_train)
-    X_test           = cleaner.transform(X_test)
-
-    # ── Etapa 6: Seleção de features (somente no treino) ─────────────────────
-    print(f"\n[6/14] Seleção de features (VarianceThreshold + SHAP)...")
-    selector    = FeatureSelector()
+    print("\n[5/11] Selecao de features (VarianceThreshold + SHAP)...")
+    selector = FeatureSelector()
     X_train_sel = selector.fit_transform(X_train, y_train)
-    X_test_sel  = selector.transform(X_test)
-
-    print(f"\n  Features selecionadas: {selector.selected_features}")
+    X_test_sel = selector.transform(X_test)
     print(f"  Shape treino selecionado: {X_train_sel.shape}")
-    print(f"  Shape teste  selecionado: {X_test_sel.shape}")
+    print(f"  Shape teste selecionado : {X_test_sel.shape}")
 
-    # ── Etapa 7: Escalonamento (fit no treino) ────────────────────────────────
-    print(f"\n[7/14] Escalonamento (StandardScaler.fit no treino)...")
-    scaler         = FeatureScaler()
+    print("\n[6/11] Escalonamento...")
+    scaler = FeatureScaler()
     X_train_scaled = scaler.fit_transform(X_train_sel)
-    X_test_scaled  = scaler.transform(X_test_sel)
+    X_test_scaled = scaler.transform(X_test_sel)
 
-    # ── Etapa 8: Balanceamento SMOTE (somente no treino) ─────────────────────
-    print(f"\n[8/14] Balanceamento SMOTE (somente no treino)...")
-    balancer             = ClassBalancer()
+    print("\n[7/11] Balanceamento SMOTE no treino...")
+    balancer = ClassBalancer()
     X_train_bal, y_train_bal = balancer.fit_resample(X_train_scaled, y_train)
 
-    # ── Etapa 9: Treinamento MLP baseline + CV ────────────────────────────────
-    print(f"\n[9/14] Treinamento MLP baseline...")
-    trainer       = ModelTrainer(save_plots=True)
-    model_baseline = trainer.train(X_train_bal, y_train_bal)
-
-    print(f"\n[9b/14] Validação cruzada no treino...")
+    print("\n[8/11] Treinamento baseline + validacao cruzada...")
+    trainer = ModelTrainer(save_plots=True)
+    model_baseline = trainer.train(X_train_bal, y_train_bal, label="baseline")
     cv_results = trainer.cross_validate(X_train_bal, y_train_bal)
 
-    # ── Etapa 10: Avaliação baseline no test_set ──────────────────────────────
-    print(f"\n[10/14] Avaliação BASELINE no test_set...")
-    evaluator      = ModelEvaluator(save_plots=True)
-    result_baseline = evaluator.evaluate(
+    print("\n[9/11] Avaliacao baseline em treino/teste...")
+    evaluator = ModelEvaluator(save_plots=True)
+    train_result_baseline = evaluator.evaluate(
+        model_baseline,
+        X_train_scaled,
+        y_train.values,
+        label="MLP Baseline (Treino)",
+        class_names=TARGET_NAMES,
+    )
+    test_result_baseline = evaluator.evaluate(
         model_baseline,
         X_test_scaled,
         y_test.values,
-        label="MLP Baseline",
+        label="MLP Baseline (Teste)",
+        class_names=TARGET_NAMES,
     )
 
-    # ── Etapa 11: Hyperparameter Tuning ───────────────────────────────────────
+    diagnostics = TrainingDiagnostics()
+    diagnostics.plot_learning_curve(
+        clone(model_baseline),
+        X_train_bal,
+        y_train_bal,
+        label="baseline",
+    )
+    diagnostics.plot_generalization_gap(
+        train_result_baseline,
+        test_result_baseline,
+        label="baseline",
+    )
+    diagnostics.save_gap_report(
+        train_result_baseline,
+        test_result_baseline,
+        label="baseline",
+    )
+
     tuner: HyperparameterTuner | None = None
+    train_result_final = train_result_baseline
+    test_result_final = test_result_baseline
+    model_best = model_baseline
+
     if run_tuning:
-        print(f"\n[11/14] Hyperparameter Tuning (RandomizedSearchCV no treino)...")
-        tuner      = HyperparameterTuner()
+        print("\n[10/11] Hyperparameter tuning...")
+        tuner = HyperparameterTuner()
         model_best = tuner.fit(X_train_bal, y_train_bal)
+
+        train_result_final = evaluator.evaluate(
+            model_best,
+            X_train_scaled,
+            y_train.values,
+            label="MLP Otimizado (Treino)",
+            class_names=TARGET_NAMES,
+        )
+        test_result_final = evaluator.evaluate(
+            model_best,
+            X_test_scaled,
+            y_test.values,
+            label="MLP Otimizado (Teste)",
+            class_names=TARGET_NAMES,
+        )
+
+        diagnostics.plot_learning_curve(
+            clone(model_best),
+            X_train_bal,
+            y_train_bal,
+            label="otimizado",
+        )
+        diagnostics.plot_generalization_gap(
+            train_result_final,
+            test_result_final,
+            label="otimizado",
+        )
+        diagnostics.save_gap_report(
+            train_result_final,
+            test_result_final,
+            label="otimizado",
+        )
+        evaluator.compare(test_result_baseline, test_result_final)
     else:
-        print(f"\n[11/14] Tuning ignorado (run_tuning=False) — usando baseline como modelo final.")
-        model_best = model_baseline
+        print("\n[10/11] Tuning ignorado (run_tuning=False).")
 
-    # ── Etapa 12: Avaliação final no test_set ────────────────────────────────
-    print(f"\n[12/14] Avaliação FINAL (modelo otimizado) no test_set...")
-    result_optimized = evaluator.evaluate(
-        model_best,
-        X_test_scaled,
-        y_test.values,
-        label="MLP Otimizado",
-    )
-
-    # ── Etapa 13: Comparação ─────────────────────────────────────────────────
-    print(f"\n[13/14] Comparação: Baseline vs. Otimizado vs. Artigo")
-    evaluator.compare(result_baseline, result_optimized)
-
-    # ── Etapa 14: Salvamento (artefatos + métricas) ───────────────────────────
-    print(f"\n[14/14] Salvando artefatos e métricas...")
+    print("\n[11/11] Salvando artefatos e metricas...")
     artifacts = PipelineArtifacts(
         model=model_best,
         imputer=cleaner.imputer,
@@ -199,70 +218,97 @@ def run_pipeline(
     )
     ModelIO().save(artifacts)
 
-    # Registrar métricas no histórico persistente
-    from datetime import datetime
-    logger    = MetricsLogger()
-    n_dupes   = 133256 - len(X_train)   # duplicatas removidas no treino
-    ds_info   = {
-        "n_raw":               190366,
-        "n_train_after_clean": len(X_train),
-        "n_test":              len(X_test),
-        "n_duplicates_removed": n_dupes,
-        "n_features":          len(selector.selected_features),
-    }
-    baseline_params = {
-        "hidden_layer_sizes": str((128, 64)),
-        "alpha": 0.0001,
-        "solver": "adam",
-        "activation": "relu",
-        "tuned": False,
-    }
+    logger = MetricsLogger()
     ts_suffix = datetime.now().strftime("%Y%m%d_%H%M")
-    logger.log(result_baseline, run_id=run_id or f"baseline_{ts_suffix}",
-               params=baseline_params, dataset_info=ds_info)
+    dataset_info = {
+        "n_total": len(X),
+        "n_train": len(X_train_scaled),
+        "n_test": len(X_test_scaled),
+        "n_features_before_selection": X_train.shape[1],
+        "n_features_after_selection": len(selector.selected_features),
+        "selected_features": selector.selected_features,
+        "class_distribution_total": {
+            TARGET_DECODING[int(cls)]: int(count)
+            for cls, count in y.value_counts().sort_index().items()
+        },
+        "cv_results": {
+            metric: {"mean": mean, "std": std}
+            for metric, (mean, std) in cv_results.items()
+        },
+    }
+
+    logger.log(
+        test_result_baseline,
+        run_id=run_id or f"baseline_{ts_suffix}",
+        params={
+            "hidden_layer_sizes": str(model_baseline.hidden_layer_sizes),
+            "alpha": model_baseline.alpha,
+            "max_iter": model_baseline.max_iter,
+            "tuned": False,
+        },
+        dataset_info=dataset_info,
+        notes=(
+            "Treino vs teste — F1 macro gap: "
+            f"{train_result_baseline.f1_macro - test_result_baseline.f1_macro:+.4f}"
+        ),
+    )
 
     if run_tuning and tuner is not None:
-        tuned_params = {**baseline_params, **tuner.best_params_, "tuned": True}
-        logger.log(result_optimized, run_id=f"tuned_{ts_suffix}",
-                   params=tuned_params, dataset_info=ds_info)
+        logger.log(
+            test_result_final,
+            run_id=f"tuned_{ts_suffix}",
+            params={**tuner.best_params_, "tuned": True},
+            dataset_info=dataset_info,
+            notes=(
+                "Treino vs teste — F1 macro gap: "
+                f"{train_result_final.f1_macro - test_result_final.f1_macro:+.4f}"
+            ),
+        )
 
     logger.to_csv()
     logger.print_summary()
 
-    print("\n" + "=" * 60)
-    print("  Pipeline concluído com sucesso!")
-    print(f"  Modelos  : models/")
-    print(f"  Outputs  : outputs/")
-    print(f"  Métricas : outputs/metrics_history.json")
-    print("=" * 60)
+    print("\n" + "=" * 72)
+    print("  Pipeline concluido com sucesso!")
+    print("  Modelos/artifacts : models/")
+    print("  Graficos e relats : outputs/")
+    print("  Historico         : outputs/metrics_history.json")
+    print("=" * 72)
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Pipeline de detecção de DDoS em SDN com MLP (InSDN8)"
+        description="Pipeline multiclasse para o InSDN (Normal/Flooding/Intrusao)."
     )
     parser.add_argument(
         "--no-tuning",
         action="store_true",
-        help="Pular o hyperparameter tuning (mais rápido, apenas baseline)",
+        help="Pula o hyperparameter tuning (mais rapido).",
     )
     parser.add_argument(
         "--no-eda",
         action="store_true",
-        help="Pular a análise exploratória textual",
+        help="Pula a EDA textual.",
     )
     parser.add_argument(
         "--run-id",
         type=str,
         default=None,
-        help="Identificador da run para o histórico de métricas (ex: 'experimento_v2')",
+        help="Identificador opcional da execucao.",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--sample-size",
+        type=int,
+        default=None,
+        help="Usa uma amostra estratificada do dataset consolidado para experimentos rapidos.",
+    )
 
+    args = parser.parse_args()
     run_pipeline(
         run_tuning=not args.no_tuning,
         run_eda=not args.no_eda,
         run_id=args.run_id,
+        sample_size=args.sample_size,
     )

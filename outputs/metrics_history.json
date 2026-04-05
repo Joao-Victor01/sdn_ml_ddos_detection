@@ -1,0 +1,216 @@
+[
+  {
+    "run_id": "validacao_multiclasse",
+    "timestamp": "2026-04-05T10:13:23.166878",
+    "label": "MLP Baseline (Teste)",
+    "class_names": [
+      "Normal",
+      "Flooding",
+      "Intrusao"
+    ],
+    "metrics": {
+      "accuracy": 0.968611,
+      "balanced_accuracy": 0.969882,
+      "precision_macro": 0.959541,
+      "recall_macro": 0.969882,
+      "f1_macro": 0.964453,
+      "f1_weighted": 0.968709,
+      "mcc": 0.949669,
+      "gm": 0.977464,
+      "roc_auc_ovr_macro": 0.995016
+    },
+    "confusion_matrix": [
+      [
+        686,
+        9,
+        21
+      ],
+      [
+        52,
+        1763,
+        23
+      ],
+      [
+        1,
+        7,
+        1038
+      ]
+    ],
+    "params": {
+      "hidden_layer_sizes": "(128, 64)",
+      "alpha": 0.001,
+      "max_iter": 250,
+      "tuned": false
+    },
+    "dataset_info": {
+      "n_total": 12000,
+      "n_train": 8400,
+      "n_test": 3600,
+      "n_features_before_selection": 26,
+      "n_features_after_selection": 26,
+      "selected_features": [
+        "Protocol",
+        "Pkt Len Var",
+        "Pkt Len Mean",
+        "SYN Flag Cnt",
+        "Bwd IAT Min",
+        "Flow IAT Min",
+        "Pkt Len Std",
+        "Flow Duration",
+        "TotLen Bwd Pkts",
+        "Flow IAT Max",
+        "Bwd IAT Tot",
+        "Tot Fwd Pkts",
+        "Flow IAT Mean",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "Flow Pkts/s",
+        "Bwd Pkts/s",
+        "Bwd IAT Max",
+        "Bwd IAT Mean",
+        "Down/Up Ratio",
+        "Flow IAT Std",
+        "Flow Byts/s",
+        "Bwd IAT Std",
+        "ACK Flag Cnt",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "class_distribution_total": {
+        "Normal": 2388,
+        "Flooding": 6126,
+        "Intrusao": 3486
+      },
+      "cv_results": {
+        "accuracy": {
+          "mean": 0.9661847014925374,
+          "std": 0.004581828988896608
+        },
+        "balanced_accuracy": {
+          "mean": 0.966182740360487,
+          "std": 0.0045786275169796145
+        },
+        "f1_macro": {
+          "mean": 0.9661546847328689,
+          "std": 0.004580489599023742
+        },
+        "precision_macro": {
+          "mean": 0.9667092643505453,
+          "std": 0.004576176328175041
+        },
+        "recall_macro": {
+          "mean": 0.966182740360487,
+          "std": 0.0045786275169796145
+        }
+      }
+    },
+    "notes": "Treino vs teste — F1 macro gap: -0.0019"
+  },
+  {
+    "run_id": "experimento_rapido",
+    "timestamp": "2026-04-05T10:22:11.699788",
+    "label": "MLP Baseline (Teste)",
+    "class_names": [
+      "Normal",
+      "Flooding",
+      "Intrusao"
+    ],
+    "metrics": {
+      "accuracy": 0.97,
+      "balanced_accuracy": 0.971903,
+      "precision_macro": 0.95916,
+      "recall_macro": 0.971903,
+      "f1_macro": 0.964839,
+      "f1_weighted": 0.970379,
+      "mcc": 0.952014,
+      "gm": 0.978977,
+      "roc_auc_ovr_macro": 0.995551
+    },
+    "confusion_matrix": [
+      [
+        702,
+        8,
+        6
+      ],
+      [
+        56,
+        1777,
+        5
+      ],
+      [
+        24,
+        9,
+        1013
+      ]
+    ],
+    "params": {
+      "hidden_layer_sizes": "(128, 64)",
+      "alpha": 0.001,
+      "max_iter": 250,
+      "tuned": false
+    },
+    "dataset_info": {
+      "n_total": 12000,
+      "n_train": 8400,
+      "n_test": 3600,
+      "n_features_before_selection": 26,
+      "n_features_after_selection": 26,
+      "selected_features": [
+        "Protocol",
+        "Pkt Len Var",
+        "SYN Flag Cnt",
+        "Pkt Len Mean",
+        "Bwd IAT Min",
+        "Pkt Len Std",
+        "Flow Duration",
+        "Flow IAT Max",
+        "Flow IAT Mean",
+        "Flow IAT Min",
+        "TotLen Bwd Pkts",
+        "Tot Bwd Pkts",
+        "Bwd IAT Tot",
+        "Tot Fwd Pkts",
+        "TotLen Fwd Pkts",
+        "Bwd Pkts/s",
+        "Flow Pkts/s",
+        "Flow IAT Std",
+        "Bwd IAT Max",
+        "Down/Up Ratio",
+        "Flow Byts/s",
+        "Bwd IAT Std",
+        "ACK Flag Cnt",
+        "Bwd IAT Mean",
+        "Idle Mean",
+        "Active Mean"
+      ],
+      "class_distribution_total": {
+        "Normal": 2388,
+        "Flooding": 6126,
+        "Intrusao": 3486
+      },
+      "cv_results": {
+        "accuracy": {
+          "mean": 0.9610541044776121,
+          "std": 0.01007037926396448
+        },
+        "balanced_accuracy": {
+          "mean": 0.9610491522317974,
+          "std": 0.010073374295031003
+        },
+        "f1_macro": {
+          "mean": 0.9609692672483819,
+          "std": 0.010236978395431513
+        },
+        "precision_macro": {
+          "mean": 0.9619489896591408,
+          "std": 0.009698210576284144
+        },
+        "recall_macro": {
+          "mean": 0.9610491522317974,
+          "std": 0.010073374295031003
+        }
+      }
+    },
+    "notes": "Treino vs teste — F1 macro gap: +0.0034"
+  }
+]
