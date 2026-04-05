@@ -104,3 +104,19 @@ CV_SCORING:  str = "f1_macro"
 # ── Validação semântica BOTNET ─────────────────────────────────────────────────
 # Recall mínimo esperado para BOTNET no teste (seção 8.11 do plano)
 BOTNET_MIN_RECALL: float = 0.80
+
+# ── Permutation Importance / Ablation Study ────────────────────────────────────
+# Features suspeitas de ser "atalhos de identidade": o modelo pode usar
+# porta/protocolo como proxy do tipo de tráfego em vez de aprender padrões
+# comportamentais reais. Em produção, essas features podem não estar disponíveis
+# ou ter distribuição diferente (ex: porta 80 pode ser legítimo ou ataque).
+IDENTITY_FEATURES: list[str] = [
+    "Dst Port",
+    "Src Port",
+    "Protocol",
+    "Bwd Header Len",
+    "Init Bwd Win Byts",
+    "Fwd Header Len",
+]
+# Número de repetições da permutação (30 é o mínimo para estimativa estável)
+PERMUTATION_N_REPEATS: int = 30

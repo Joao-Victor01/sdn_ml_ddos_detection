@@ -46,6 +46,8 @@ from ml.triclass.config import (
     MODELS_TRICLASS_DIR,
     OUTPUTS_TRICLASS,
     BEHAVIORAL_FEATURES,
+    IDENTITY_FEATURES,
+    PERMUTATION_N_REPEATS,
 )
 from ml.triclass.data.loader import InSDNTriclassLoader
 from ml.triclass.preprocessing.labeler import TriclassLabeler
@@ -281,8 +283,41 @@ def run_triclass_pipeline(
     # ── Etapa 14: Importância de features + salvamento ────────────────────────
     _step(14, "Importância de features + salvamento de artefatos")
 
+    # 14a — Impurity-based importance (Gini, nativa do RF)
     _plot_feature_importance(
         rf_best, selected_features, computed_feats, save_plots
+    )
+
+    # 14b — Permutation Importance no test set
+    #        Razão: importância Gini superestima features de alta cardinalidade
+    #        (ex: porta, protocolo). A permutation importance no test set mede o
+    #        impacto real de cada feature na métrica de generalização.
+    #        Localização obrigatória: APÓS Etapa 12 (avaliação já realizada);
+    #        uso do test set é apenas diagnóstico — não influencia nenhum modelo.
+    print(f"\n[14b] Permutation Importance no test set "
+          f"({PERMUTATION_N_REPEATS} repetições)...")
+    perm_result = _run_permutation_importance(
+        rf_best,
+        X_test_vt.values,
+        y_test.values,
+        selected_features,
+        computed_feats,
+        n_repeats=PERMUTATION_N_REPEATS,
+        save=save_plots,
+    )
+
+    # 14c — Ablation Study: retreinar sem features de identidade
+    #        Mede quanto do F1 é explicado por atalhos de identidade
+    #        (Dst Port, Src Port, Protocol, etc.) em vez de padrões comportamentais.
+    print(f"\n[14c] Ablation Study — retreinar sem features de identidade...")
+    ablation_result = _run_ablation_study(
+        X_train_bal,
+        y_train_bal,
+        X_test_vt,
+        y_test.values,
+        selected_features,
+        result_rf_best.f1_macro,
+        save=save_plots,
     )
 
     # Salvar todos os artefatos
@@ -308,15 +343,20 @@ def run_triclass_pipeline(
           f"Recall Cl2: {result_mlp.recall_class2:.4f}")
     print(f"  BOTNET recall semântico: {botnet_result.recall:.4f} "
           f"({'PASSOU' if botnet_result.passed else 'FALHOU'})")
+    print(f"  Ablation F1 (sem identidade): {ablation_result['f1_ablation']:.4f} "
+          f"| Queda: {ablation_result['f1_drop']:.4f} "
+          f"({'OK — comportamental' if ablation_result['f1_drop'] < 0.05 else 'ALERTA — atalho de identidade'})")
 
     return {
-        "rf_baseline":       result_rf_base,
-        "rf_best":           result_rf_best,
-        "mlp":               result_mlp,
-        "botnet_validation": botnet_result,
-        "cv_rf":             cv_rf,
-        "cv_mlp":            cv_mlp,
-        "selected_features": selected_features,
+        "rf_baseline":         result_rf_base,
+        "rf_best":             result_rf_best,
+        "mlp":                 result_mlp,
+        "botnet_validation":   botnet_result,
+        "cv_rf":               cv_rf,
+        "cv_mlp":              cv_mlp,
+        "selected_features":   selected_features,
+        "permutation_importance": perm_result,
+        "ablation":            ablation_result,
     }
 
 
@@ -340,6 +380,269 @@ def _print_dist(label: str, y: pd.Series) -> None:
         for cls, cnt in vc.items()
     ]
     print(f"  {label}: {' | '.join(parts)}")
+
+
+def _run_permutation_importance(
+    rf,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    feature_names: list[str],
+    computed_feats: list[str],
+    n_repeats: int = PERMUTATION_N_REPEATS,
+    save: bool = True,
+) -> dict:
+    """
+    Permutation Importance no test set — diagnóstico de atalhos de identidade.
+
+    Por que usar o test set aqui (e não o treino):
+      - O test set representa dados "do mundo real" nunca vistos.
+      - Permutação no treino mede apenas quais features o modelo memorizou.
+      - Permutação no teste mede quais features contribuem para generalização.
+      - Uso diagnóstico: NÃO altera nenhum modelo; é análise post-hoc.
+
+    Como interpretar:
+      - Importância alta (média >> 0) → feature genuinamente útil.
+      - Importância ≈ 0              → feature irrelevante para generalização.
+      - Importância negativa         → feature introduz ruído (raramente acontece).
+      - Features de identidade com alta importância → risco de overfitting
+        para características do dataset, não do problema real.
+
+    Returns
+    -------
+    dict com 'importances_mean', 'importances_std', 'sorted_df', 'identity_warning'
+    """
+    from sklearn.inspection import permutation_importance
+
+    print(f"  Calculando permutation importance ({n_repeats} repetições)...")
+    result = permutation_importance(
+        rf, X_test, y_test,
+        n_repeats=n_repeats,
+        scoring="f1_macro",
+        random_state=RANDOM_STATE,
+        n_jobs=-1,
+    )
+
+    df_perm = pd.DataFrame({
+        "feature":    feature_names,
+        "mean":       result.importances_mean,
+        "std":        result.importances_std,
+    }).sort_values("mean", ascending=False)
+
+    df_perm["identity"] = df_perm["feature"].isin(IDENTITY_FEATURES)
+    df_perm["nova"]     = df_perm["feature"].isin(computed_feats)
+
+    # Diagnóstico: features de identidade no top-10?
+    top10 = df_perm.head(10)
+    identity_in_top10 = top10[top10["identity"]]["feature"].tolist()
+    identity_warning  = len(identity_in_top10) > 0
+
+    print(f"\n  Top 15 features (permutation importance — test set):")
+    print(f"  {'Feature':<35} {'Mean':>8} {'Std':>8} {'Tipo'}")
+    print(f"  {'-'*65}")
+    for _, row in df_perm.head(15).iterrows():
+        tipo = "IDENTIDADE" if row["identity"] else ("NOVA" if row["nova"] else "original")
+        print(f"  {row['feature']:<35} {row['mean']:>8.5f} {row['std']:>8.5f}  {tipo}")
+
+    if identity_warning:
+        print(f"\n  ⚠ ALERTA: features de identidade no Top-10 de generalização:")
+        for f in identity_in_top10:
+            row = df_perm[df_perm["feature"] == f].iloc[0]
+            print(f"    {f}: mean={row['mean']:.5f} ± {row['std']:.5f}")
+        print("  → Considerar ablation study (sub-passo 14c) para quantificar o impacto.")
+    else:
+        print("\n  ✓ Nenhuma feature de identidade no Top-10 — padrão comportamental dominante.")
+
+    if save:
+        _plot_permutation_importance(df_perm)
+
+    return {
+        "importances_mean": result.importances_mean,
+        "importances_std":  result.importances_std,
+        "sorted_df":        df_perm,
+        "identity_warning": identity_warning,
+        "identity_in_top10": identity_in_top10,
+    }
+
+
+def _plot_permutation_importance(df_perm: pd.DataFrame) -> None:
+    """Barras horizontais com intervalo de confiança por feature."""
+    try:
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Patch
+
+        top = df_perm.head(25).iloc[::-1]  # ordem crescente para barh
+        colors = [
+            "crimson"    if r["identity"] else
+            "darkorange" if r["nova"]     else
+            "steelblue"
+            for _, r in top.iterrows()
+        ]
+
+        fig, ax = plt.subplots(figsize=(10, 9))
+        ax.barh(top["feature"], top["mean"], xerr=top["std"],
+                color=colors, alpha=0.85, capsize=3, ecolor="gray")
+        ax.axvline(0, color="black", linewidth=0.8, linestyle="--")
+        ax.set_xlabel("Redução de F1 Macro ao permutar (média ± std)")
+        ax.set_title(
+            "Permutation Importance — RF Triclasse (test set)\n"
+            "Crimson = identidade  |  Laranja = comportamental nova  |  Azul = original"
+        )
+        ax.legend(handles=[
+            Patch(color="crimson",    label="Feature de identidade (suspeita)"),
+            Patch(color="darkorange", label="Feature comportamental (nova)"),
+            Patch(color="steelblue",  label="Feature original InSDN"),
+        ])
+        plt.tight_layout()
+        path = OUTPUTS_TRICLASS / "permutation_importance.png"
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"  Permutation importance salva → {path.name}")
+    except Exception as e:
+        print(f"  Erro ao plotar permutation importance: {e}")
+
+
+def _run_ablation_study(
+    X_train_bal: np.ndarray,
+    y_train_bal: np.ndarray,
+    X_test_vt: pd.DataFrame,
+    y_test: np.ndarray,
+    selected_features: list[str],
+    f1_full: float,
+    save: bool = True,
+) -> dict:
+    """
+    Ablation Study: retreinar RF sem as features de identidade.
+
+    Mede quanto do F1 é explicado por atalhos de identidade vs. padrões
+    comportamentais reais. Se a queda for pequena (< 0.05), o modelo
+    generaliza por comportamento — não por memorizar porta/protocolo.
+
+    Por que retreinar e não apenas mascarar:
+      - Mascarar colunas no teste com modelo treinado no set completo não é
+        ablation real — o modelo já aprendeu relações com essas features.
+      - Retreinar sem elas força o modelo a aprender sem esses sinais.
+
+    Por que usar X_train_bal (pós-SMOTE) e não X_train_vt (pré-SMOTE):
+      - O modelo de referência foi treinado em X_train_bal.
+      - Para comparação justa, o modelo ablation deve ter as mesmas condições
+        exceto pela ausência das features de identidade.
+
+    Returns
+    -------
+    dict com 'f1_full', 'f1_ablation', 'f1_drop', 'features_removed',
+             'features_kept', 'identity_warning'
+    """
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import f1_score
+
+    # Identificar quais features de identidade estão presentes após VT
+    identity_present = [f for f in IDENTITY_FEATURES if f in selected_features]
+    features_kept    = [f for f in selected_features if f not in IDENTITY_FEATURES]
+
+    if not identity_present:
+        print("  Nenhuma feature de identidade presente após VarianceThreshold — ablation ignorada.")
+        return {
+            "f1_full":          f1_full,
+            "f1_ablation":      f1_full,
+            "f1_drop":          0.0,
+            "features_removed": [],
+            "features_kept":    features_kept,
+            "identity_warning": False,
+        }
+
+    print(f"  Features de identidade a remover: {identity_present}")
+    print(f"  Features restantes no ablation: {len(features_kept)}")
+
+    # Índices das colunas a manter em X_train_bal (numpy array)
+    keep_idx = [selected_features.index(f) for f in features_kept]
+
+    X_train_abl = X_train_bal[:, keep_idx]
+    X_test_abl  = X_test_vt[features_kept].values
+
+    rf_ablation = RandomForestClassifier(
+        n_estimators=200,
+        class_weight="balanced",
+        random_state=RANDOM_STATE,
+        n_jobs=-1,
+    )
+    rf_ablation.fit(X_train_abl, y_train_bal)
+    y_pred_abl  = rf_ablation.predict(X_test_abl)
+    f1_ablation = float(f1_score(y_test, y_pred_abl, average="macro", zero_division=0))
+    f1_drop     = f1_full - f1_ablation
+
+    print(f"\n  F1 Macro com todas as features    : {f1_full:.4f}")
+    print(f"  F1 Macro sem features identidade  : {f1_ablation:.4f}")
+    print(f"  Queda                             : {f1_drop:+.4f}")
+
+    if f1_drop < 0.02:
+        verdict = "✓ Queda < 0.02 — modelo generaliza por comportamento, não por identidade."
+        warning = False
+    elif f1_drop < 0.05:
+        verdict = "⚠ Queda entre 0.02–0.05 — features de identidade contribuem moderadamente."
+        warning = True
+    else:
+        verdict = "✗ Queda > 0.05 — modelo depende fortemente de atalhos de identidade."
+        warning = True
+    print(f"\n  Veredito: {verdict}")
+
+    if save:
+        _plot_ablation(f1_full, f1_ablation, identity_present, features_kept)
+
+    return {
+        "f1_full":          f1_full,
+        "f1_ablation":      f1_ablation,
+        "f1_drop":          f1_drop,
+        "features_removed": identity_present,
+        "features_kept":    features_kept,
+        "identity_warning": warning,
+    }
+
+
+def _plot_ablation(
+    f1_full: float,
+    f1_ablation: float,
+    features_removed: list[str],
+    features_kept: list[str],
+) -> None:
+    """Gráfico de barras comparando F1 completo vs. ablation."""
+    try:
+        import matplotlib.pyplot as plt
+
+        labels = ["Modelo completo", "Sem features\nde identidade"]
+        values = [f1_full, f1_ablation]
+        colors = ["steelblue", "darkorange"]
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+        bars = ax.bar(labels, values, color=colors, alpha=0.85, width=0.4)
+        for bar, val in zip(bars, values):
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.003,
+                    f"{val:.4f}", ha="center", va="bottom", fontsize=12,
+                    fontweight="bold")
+
+        ax.set_ylim(max(0, min(values) - 0.05), min(1.0, max(values) + 0.05))
+        ax.set_ylabel("F1 Macro (test set)")
+        ax.set_title(
+            f"Ablation Study — Features de Identidade\n"
+            f"Removidas: {', '.join(features_removed)}"
+        )
+
+        drop = f1_full - f1_ablation
+        color = "darkgreen" if drop < 0.02 else ("orange" if drop < 0.05 else "crimson")
+        ax.text(0.5, 0.05,
+                f"Queda: {drop:+.4f}  "
+                f"({'OK' if drop < 0.02 else 'MODERADA' if drop < 0.05 else 'ALTA'})",
+                transform=ax.transAxes, ha="center", fontsize=11,
+                color=color, fontweight="bold")
+
+        ax.grid(axis="y", alpha=0.3)
+        plt.tight_layout()
+        path = OUTPUTS_TRICLASS / "ablation_identity_features.png"
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"  Ablation plot salvo → {path.name}")
+    except Exception as e:
+        print(f"  Erro ao plotar ablation: {e}")
 
 
 def _plot_feature_importance(
