@@ -1,7 +1,7 @@
 [
   {
-    "run_id": "validacao_multiclasse",
-    "timestamp": "2026-04-05T10:13:23.166878",
+    "run_id": "tuned_full",
+    "timestamp": "2026-04-05T22:43:58.414016",
     "label": "MLP Baseline (Teste)",
     "class_names": [
       "Normal",
@@ -9,31 +9,31 @@
       "Intrusao"
     ],
     "metrics": {
-      "accuracy": 0.968611,
-      "balanced_accuracy": 0.969882,
-      "precision_macro": 0.959541,
-      "recall_macro": 0.969882,
-      "f1_macro": 0.964453,
-      "f1_weighted": 0.968709,
-      "mcc": 0.949669,
-      "gm": 0.977464,
-      "roc_auc_ovr_macro": 0.995016
+      "accuracy": 0.982029,
+      "balanced_accuracy": 0.982494,
+      "precision_macro": 0.974236,
+      "recall_macro": 0.982494,
+      "f1_macro": 0.978201,
+      "f1_weighted": 0.982151,
+      "mcc": 0.971069,
+      "gm": 0.98722,
+      "roc_auc_ovr_macro": 0.999377
     },
     "confusion_matrix": [
       [
-        686,
-        9,
-        21
+        20094,
+        47,
+        386
       ],
       [
-        52,
-        1763,
-        23
+        1058,
+        51556,
+        54
       ],
       [
-        1,
-        7,
-        1038
+        230,
+        79,
+        29663
       ]
     ],
     "params": {
@@ -43,174 +43,241 @@
       "tuned": false
     },
     "dataset_info": {
-      "n_total": 12000,
-      "n_train": 8400,
-      "n_test": 3600,
+      "n_total": 343889,
+      "n_train": 240721,
+      "n_test": 103167,
       "n_features_before_selection": 26,
       "n_features_after_selection": 26,
       "selected_features": [
         "Protocol",
         "Pkt Len Var",
+        "Bwd IAT Min",
         "Pkt Len Mean",
         "SYN Flag Cnt",
-        "Bwd IAT Min",
-        "Flow IAT Min",
         "Pkt Len Std",
-        "Flow Duration",
-        "TotLen Bwd Pkts",
-        "Flow IAT Max",
-        "Bwd IAT Tot",
-        "Tot Fwd Pkts",
         "Flow IAT Mean",
-        "Tot Bwd Pkts",
-        "TotLen Fwd Pkts",
         "Flow Pkts/s",
-        "Bwd Pkts/s",
-        "Bwd IAT Max",
-        "Bwd IAT Mean",
-        "Down/Up Ratio",
+        "Tot Bwd Pkts",
+        "Flow IAT Min",
+        "Flow IAT Max",
+        "TotLen Fwd Pkts",
+        "Bwd IAT Tot",
+        "TotLen Bwd Pkts",
+        "Tot Fwd Pkts",
         "Flow IAT Std",
+        "Bwd Pkts/s",
+        "Flow Duration",
+        "Bwd IAT Max",
         "Flow Byts/s",
         "Bwd IAT Std",
+        "Down/Up Ratio",
+        "Bwd IAT Mean",
         "ACK Flag Cnt",
         "Active Mean",
         "Idle Mean"
       ],
+      "binary_features_passthrough": [
+        "SYN Flag Cnt",
+        "ACK Flag Cnt"
+      ],
+      "scaled_features": [
+        "Protocol",
+        "Pkt Len Var",
+        "Bwd IAT Min",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Flow IAT Mean",
+        "Flow Pkts/s",
+        "Tot Bwd Pkts",
+        "Flow IAT Min",
+        "Flow IAT Max",
+        "TotLen Fwd Pkts",
+        "Bwd IAT Tot",
+        "TotLen Bwd Pkts",
+        "Tot Fwd Pkts",
+        "Flow IAT Std",
+        "Bwd Pkts/s",
+        "Flow Duration",
+        "Bwd IAT Max",
+        "Flow Byts/s",
+        "Bwd IAT Std",
+        "Down/Up Ratio",
+        "Bwd IAT Mean",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "run_output_dir": "/home/lumo/sdn_ml_ddos_detection/outputs/runs/tuned_full",
       "class_distribution_total": {
-        "Normal": 2388,
-        "Flooding": 6126,
-        "Intrusao": 3486
+        "Normal": 68424,
+        "Flooding": 175558,
+        "Intrusao": 99907
       },
       "cv_results": {
         "accuracy": {
-          "mean": 0.9661847014925374,
-          "std": 0.004581828988896608
+          "mean": 0.9796860231960159,
+          "std": 0.0015591143852450666
         },
         "balanced_accuracy": {
-          "mean": 0.966182740360487,
-          "std": 0.0045786275169796145
+          "mean": 0.9794240877097029,
+          "std": 0.0015118787939423842
         },
         "f1_macro": {
-          "mean": 0.9661546847328689,
-          "std": 0.004580489599023742
+          "mean": 0.9753989401234664,
+          "std": 0.0016450261738159336
         },
         "precision_macro": {
-          "mean": 0.9667092643505453,
-          "std": 0.004576176328175041
+          "mean": 0.9717928085313665,
+          "std": 0.003533866487552971
         },
         "recall_macro": {
-          "mean": 0.966182740360487,
-          "std": 0.0045786275169796145
+          "mean": 0.9794240877097029,
+          "std": 0.0015118787939423842
         }
       }
     },
-    "notes": "Treino vs teste — F1 macro gap: -0.0019"
+    "notes": "Treino vs teste — F1 macro gap: -0.0015"
   },
   {
-    "run_id": "experimento_rapido",
-    "timestamp": "2026-04-05T10:22:11.699788",
-    "label": "MLP Baseline (Teste)",
+    "run_id": "tuned_tuned_full",
+    "timestamp": "2026-04-05T22:43:58.414243",
+    "label": "MLP Otimizado (Teste)",
     "class_names": [
       "Normal",
       "Flooding",
       "Intrusao"
     ],
     "metrics": {
-      "accuracy": 0.97,
-      "balanced_accuracy": 0.971903,
-      "precision_macro": 0.95916,
-      "recall_macro": 0.971903,
-      "f1_macro": 0.964839,
-      "f1_weighted": 0.970379,
-      "mcc": 0.952014,
-      "gm": 0.978977,
-      "roc_auc_ovr_macro": 0.995551
+      "accuracy": 0.981147,
+      "balanced_accuracy": 0.978878,
+      "precision_macro": 0.975203,
+      "recall_macro": 0.978878,
+      "f1_macro": 0.976945,
+      "f1_weighted": 0.981229,
+      "mcc": 0.969462,
+      "gm": 0.984795,
+      "roc_auc_ovr_macro": 0.999191
     },
     "confusion_matrix": [
       [
-        702,
-        8,
-        6
+        19984,
+        367,
+        176
       ],
       [
-        56,
-        1777,
-        5
+        595,
+        51982,
+        91
       ],
       [
-        24,
-        9,
-        1013
+        589,
+        127,
+        29256
       ]
     ],
     "params": {
-      "hidden_layer_sizes": "(128, 64)",
-      "alpha": 0.001,
-      "max_iter": 250,
-      "tuned": false
+      "max_iter": 200,
+      "learning_rate_init": 0.001,
+      "learning_rate": "adaptive",
+      "hidden_layer_sizes": [
+        256,
+        128
+      ],
+      "alpha": 0.0001,
+      "tuned": true
     },
     "dataset_info": {
-      "n_total": 12000,
-      "n_train": 8400,
-      "n_test": 3600,
+      "n_total": 343889,
+      "n_train": 240721,
+      "n_test": 103167,
       "n_features_before_selection": 26,
       "n_features_after_selection": 26,
       "selected_features": [
         "Protocol",
         "Pkt Len Var",
-        "SYN Flag Cnt",
-        "Pkt Len Mean",
         "Bwd IAT Min",
+        "Pkt Len Mean",
+        "SYN Flag Cnt",
         "Pkt Len Std",
-        "Flow Duration",
-        "Flow IAT Max",
         "Flow IAT Mean",
-        "Flow IAT Min",
-        "TotLen Bwd Pkts",
-        "Tot Bwd Pkts",
-        "Bwd IAT Tot",
-        "Tot Fwd Pkts",
-        "TotLen Fwd Pkts",
-        "Bwd Pkts/s",
         "Flow Pkts/s",
+        "Tot Bwd Pkts",
+        "Flow IAT Min",
+        "Flow IAT Max",
+        "TotLen Fwd Pkts",
+        "Bwd IAT Tot",
+        "TotLen Bwd Pkts",
+        "Tot Fwd Pkts",
         "Flow IAT Std",
+        "Bwd Pkts/s",
+        "Flow Duration",
         "Bwd IAT Max",
-        "Down/Up Ratio",
         "Flow Byts/s",
         "Bwd IAT Std",
-        "ACK Flag Cnt",
+        "Down/Up Ratio",
         "Bwd IAT Mean",
-        "Idle Mean",
-        "Active Mean"
+        "ACK Flag Cnt",
+        "Active Mean",
+        "Idle Mean"
       ],
+      "binary_features_passthrough": [
+        "SYN Flag Cnt",
+        "ACK Flag Cnt"
+      ],
+      "scaled_features": [
+        "Protocol",
+        "Pkt Len Var",
+        "Bwd IAT Min",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Flow IAT Mean",
+        "Flow Pkts/s",
+        "Tot Bwd Pkts",
+        "Flow IAT Min",
+        "Flow IAT Max",
+        "TotLen Fwd Pkts",
+        "Bwd IAT Tot",
+        "TotLen Bwd Pkts",
+        "Tot Fwd Pkts",
+        "Flow IAT Std",
+        "Bwd Pkts/s",
+        "Flow Duration",
+        "Bwd IAT Max",
+        "Flow Byts/s",
+        "Bwd IAT Std",
+        "Down/Up Ratio",
+        "Bwd IAT Mean",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "run_output_dir": "/home/lumo/sdn_ml_ddos_detection/outputs/runs/tuned_full",
       "class_distribution_total": {
-        "Normal": 2388,
-        "Flooding": 6126,
-        "Intrusao": 3486
+        "Normal": 68424,
+        "Flooding": 175558,
+        "Intrusao": 99907
       },
       "cv_results": {
         "accuracy": {
-          "mean": 0.9610541044776121,
-          "std": 0.01007037926396448
+          "mean": 0.9796860231960159,
+          "std": 0.0015591143852450666
         },
         "balanced_accuracy": {
-          "mean": 0.9610491522317974,
-          "std": 0.010073374295031003
+          "mean": 0.9794240877097029,
+          "std": 0.0015118787939423842
         },
         "f1_macro": {
-          "mean": 0.9609692672483819,
-          "std": 0.010236978395431513
+          "mean": 0.9753989401234664,
+          "std": 0.0016450261738159336
         },
         "precision_macro": {
-          "mean": 0.9619489896591408,
-          "std": 0.009698210576284144
+          "mean": 0.9717928085313665,
+          "std": 0.003533866487552971
         },
         "recall_macro": {
-          "mean": 0.9610491522317974,
-          "std": 0.010073374295031003
+          "mean": 0.9794240877097029,
+          "std": 0.0015118787939423842
         }
       }
     },
-    "notes": "Treino vs teste — F1 macro gap: +0.0034"
+    "notes": "Treino vs teste — F1 macro gap: -0.0013"
   }
 ]

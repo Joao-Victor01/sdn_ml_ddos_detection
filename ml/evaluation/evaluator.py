@@ -5,6 +5,7 @@ Avaliacoes e visualizacoes para classificacao multiclasse.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -73,9 +74,14 @@ class EvaluationResult:
 class ModelEvaluator:
     """Avalia modelos multiclasse no conjunto de teste ou treino."""
 
-    def __init__(self, save_plots: bool = True) -> None:
+    def __init__(
+        self,
+        save_plots: bool = True,
+        output_dir: Path | str = OUTPUTS_DIR,
+    ) -> None:
         self._save_plots = save_plots
-        OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+        self._output_dir = Path(output_dir)
+        self._output_dir.mkdir(parents=True, exist_ok=True)
 
     def evaluate(
         self,
@@ -188,7 +194,7 @@ class ModelEvaluator:
             ).plot(values_format=".0f", ax=ax, cmap="Blues", colorbar=False)
             ax.set_title(f"Matriz de confusao — {label}")
             plt.tight_layout()
-            path = OUTPUTS_DIR / f"confusion_matrix_{slug}.png"
+            path = self._output_dir / f"confusion_matrix_{slug}.png"
             plt.savefig(path, dpi=150, bbox_inches="tight")
             plt.close()
             print(f"[ModelEvaluator] Matriz de confusao salva: {path.name}")

@@ -28,6 +28,8 @@ O pipeline foi implementado respeitando as boas praticas descritas em `docs/guia
 - `split` treino/teste antes de qualquer transformacao que aprenda dos dados;
 - `fit` de imputacao, escalonamento e selecao apenas no treino;
 - `SMOTE` apenas no treino;
+- validacao cruzada e curva de aprendizado com preprocessamento refeito dentro de cada dobra;
+- preservacao de features binarias sem padronizacao;
 - avaliacao final no teste sem realimentacao para o treinamento.
 
 ---
@@ -292,15 +294,24 @@ Arquivo: [scaler.py](/home/jv/sdn_ml_ddos_detection/ml/preprocessing/scaler.py)
 
 ### Responsabilidade
 
-Aplicar `StandardScaler`.
+Aplicar `StandardScaler` apenas nas colunas continuas.
 
 ### Como funciona
 
 - `fit_transform(X_train)`
-  ajusta o `scaler` e transforma o treino;
+  detecta colunas binarias `0/1`, ajusta o `scaler` apenas nas colunas continuas e transforma o treino;
 
 - `transform(X_test)`
-  aplica os parametros aprendidos no treino ao teste.
+  reaplica exatamente a mesma separacao entre colunas continuas e binarias no teste.
+
+### Colunas binarias preservadas
+
+No estado atual do projeto, as colunas conhecidas como binarias que permanecem sem escala sao:
+
+- `SYN Flag Cnt`
+- `ACK Flag Cnt`
+
+O scaler tambem detecta outras colunas observadas como estritamente binarias no treino, caso existam.
 
 ### Por que isso importa?
 
@@ -310,6 +321,8 @@ O `StandardScaler` coloca os dados aproximadamente em:
 
 - media `0`
 - desvio padrao `1`
+
+Isso vale para as colunas continuas. As binarias sao preservadas em `0/1`, o que evita distorcer o significado semantico desses atributos.
 
 ---
 
@@ -327,6 +340,12 @@ Balancear as classes com `SMOTE`.
 - imprime a distribuicao antes;
 - aplica `SMOTE`;
 - imprime a distribuicao depois.
+
+### Robustez adicional
+
+Em subamostras pequenas usadas por diagnosticos internos, o codigo ajusta `k_neighbors` dinamicamente para evitar falhas quando a classe minoritaria fica pequena demais para o `SMOTE` padrao.
+
+Se alguma classe tiver menos de 2 amostras na subamostra da dobra, o balanceamento e ignorado apenas naquele ajuste local.
 
 ### Regra metodologica
 
@@ -374,7 +393,7 @@ Se a biblioteca `shap` nao estiver disponivel, o codigo usa `feature_importances
 - conjunto filtrado de features;
 - lista de features selecionadas;
 - ranking de importancia;
-- grafico salvo em `outputs/feature_importance_multiclass.png`.
+- grafico salvo em `outputs/runs/<run_id>/feature_importance_multiclass.png`.
 
 ### Decisao de projeto
 
@@ -429,7 +448,7 @@ Arquivo: [trainer.py](/home/jv/sdn_ml_ddos_detection/ml/training/trainer.py)
 ### Responsabilidades
 
 - treinar o baseline;
-- executar validacao cruzada no treino;
+- executar validacao cruzada limpa no treino;
 - gerar curva de loss.
 
 ### `train()`
@@ -448,7 +467,18 @@ Executa:
 
 ### `cross_validate()`
 
-Executa `cross_validate` com `StratifiedKFold`.
+Executa validacao cruzada estratificada manual.
+
+Em cada dobra, o codigo refaz do zero:
+
+- limpeza;
+- imputacao;
+- `VarianceThreshold`;
+- escalonamento sem colunas binarias;
+- `SMOTE` apenas na parte de treino da dobra;
+- treinamento do MLP.
+
+Isso evita que a validacao cruzada use um treino ja preprocessado com informacao agregada do conjunto inteiro de treino.
 
 Metricas atuais:
 
@@ -549,7 +579,7 @@ Avalia separabilidade multiclasse em esquema `one-vs-rest`.
 
 - resumo textual;
 - `classification_report`;
-- matriz de confusao em `outputs/confusion_matrix_*.png`.
+- matriz de confusao em `outputs/runs/<run_id>/confusion_matrix_*.png`.
 
 ---
 
@@ -566,6 +596,8 @@ Gera curva de aprendizado a partir de:
 - diferentes tamanhos de treino;
 - validacao cruzada estratificada;
 - metrica principal, atualmente `f1_macro`.
+
+Assim como a validacao cruzada do `trainer.py`, cada ponto da curva refaz internamente o pipeline de preprocessamento dentro da dobra e dentro da subamostra de treino correspondente.
 
 Serve para verificar:
 
@@ -609,6 +641,10 @@ Arquivo: [model_io.py](/home/jv/sdn_ml_ddos_detection/ml/persistence/model_io.py
 - `variance_filter.joblib`
 - `scaler.joblib`
 - `selected_features.joblib`
+
+Observacao:
+
+- `scaler.joblib` hoje salva o objeto `FeatureScaler` completo, e nao apenas um `StandardScaler` puro, porque ele precisa lembrar quais colunas foram padronizadas e quais foram preservadas sem escala.
 
 ### Por que salvar tudo?
 
@@ -695,6 +731,7 @@ Registra cada run em:
 - matriz de confusao
 - hiperparametros
 - informacoes do dataset
+- diretorio de outputs da run
 - observacoes sobre gap treino/teste
 
 Isso permite comparar experimentos ao longo do tempo.
@@ -731,7 +768,7 @@ A funcao `run_pipeline()` e o orquestrador do sistema.
   reservado para controle de verbosidade.
 
 - `run_id`
-  identificador da execucao para o historico.
+  identificador da execucao para o historico e para o subdiretorio `outputs/runs/<run_id>/`.
 
 - `sample_size`
   permite amostra estratificada para experimentos rapidos.
@@ -742,7 +779,8 @@ A funcao `run_pipeline()` e o orquestrador do sistema.
 
 - configura `numpy.random.seed`;
 - configura exibicao do `pandas`;
-- garante que `outputs/` existe.
+- garante que `outputs/` existe;
+- cria um diretorio exclusivo para a run em `outputs/runs/<run_id>/`.
 
 #### 2. Carregamento
 
@@ -754,7 +792,8 @@ A funcao `run_pipeline()` e o orquestrador do sistema.
 
 - usa `train_test_split`;
 - `stratify=y`;
-- preserva a distribuicao de classes.
+- preserva a distribuicao de classes;
+- guarda uma copia bruta do treino para diagnosticos limpos posteriores.
 
 #### 4. Limpeza
 
@@ -783,7 +822,7 @@ A funcao `run_pipeline()` e o orquestrador do sistema.
 
 - instancia `ModelTrainer`;
 - treina o baseline;
-- executa validacao cruzada.
+- executa validacao cruzada limpa usando o treino bruto da etapa 3.
 
 #### 9. Avaliacao
 
@@ -798,6 +837,11 @@ A funcao `run_pipeline()` e o orquestrador do sistema.
   - `learning_curve`;
   - `generalization_gap`;
   - `generalization_report`.
+
+Importante:
+
+- a `learning_curve` usa preprocessamento refeito dentro de cada dobra;
+- o `generalization_gap` continua comparando o modelo final treinado em todo o treino contra o teste hold-out.
 
 #### 11. Tuning opcional
 
@@ -876,12 +920,18 @@ Em `models/`:
 
 Em `outputs/`:
 
-- curvas de loss
+- `metrics_history.json`
+- `metrics_history.csv`
+- subdiretorio `runs/`
+
+Em `outputs/runs/<run_id>/`:
+
+- curva de loss
 - curva de aprendizado
 - gap de generalizacao
+- relatorio de generalizacao
 - matrizes de confusao
 - importancia de features
-- historico de metricas
 
 ---
 
@@ -919,7 +969,7 @@ python3 -m ml.utils.metrics_plotter --compare baseline_full tuned_full
 
 ### `feature_importance_multiclass.png`
 
-Mostra quais atributos mais influenciaram o modelo.
+Mostra quais atributos mais influenciaram o modelo final da run.
 
 ### `loss_curve_baseline.png`
 
@@ -943,7 +993,7 @@ Mostra exatamente onde o modelo confunde as classes.
 
 ### `metrics_history.json` e `metrics_history.csv`
 
-Guardam o historico dos experimentos.
+Guardam o historico agregado dos experimentos, enquanto os graficos e relatorios detalhados ficam separados por run em `outputs/runs/<run_id>/`.
 
 ---
 
@@ -955,9 +1005,13 @@ O codigo atual garante:
 - `split` antes do preprocessamento;
 - imputacao aprendida apenas no treino;
 - escalonamento aprendido apenas no treino;
+- preservacao de colunas binarias sem padronizacao;
 - selecao de features baseada apenas no treino;
 - `SMOTE` apenas no treino;
+- validacao cruzada com preprocessamento refeito dentro de cada dobra;
+- curva de aprendizado com preprocessamento refeito dentro de cada dobra;
 - avaliacao final isolada no teste;
+- separacao fisica dos artefatos graficos e relatorios por `run_id`;
 - persistencia de todos os transformadores necessarios para inferencia.
 
 Essas garantias sao o nucleo da confiabilidade metodologica do pacote.
@@ -972,7 +1026,7 @@ Mesmo estando bem implementado, o sistema tem limitacoes naturais:
 - a qualidade do agrupamento `Intrusao` depende da coerencia entre tipos de ataque diferentes;
 - os resultados de amostras rapidas nao substituem validacao completa no dataset inteiro;
 - o nome `DDoSPredictor` ainda nao reflete o escopo multiclasse atual;
-- alguns arquivos antigos de `outputs/` podem coexistir com novos graficos, dependendo do historico do diretorio.
+- a validacao cruzada limpa e a curva de aprendizado limpa custam mais tempo computacional do que a versao simplificada anterior.
 
 ---
 

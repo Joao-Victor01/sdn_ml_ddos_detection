@@ -12,7 +12,7 @@ Artefatos salvos:
   mlp_ddos_insdn.joblib    — modelo MLP treinado
   imputer.joblib           — SimpleImputer (fit no treino)
   variance_filter.joblib   — VarianceThreshold (fit no treino)
-  scaler.joblib            — StandardScaler (fit no treino)
+  scaler.joblib            — FeatureScaler (fit no treino)
   selected_features.joblib — lista de features selecionadas pelo SHAP
 """
 
@@ -25,9 +25,9 @@ import joblib
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.impute import SimpleImputer
 from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import StandardScaler
 
 from ml.config import MODELS_DIR
+from ml.preprocessing.scaler import FeatureScaler
 
 
 @dataclass
@@ -42,7 +42,7 @@ class PipelineArtifacts:
     model:             MLPClassifier
     imputer:           SimpleImputer
     variance_filter:   VarianceThreshold
-    scaler:            StandardScaler
+    scaler:            FeatureScaler
     selected_features: list[str]
 
 

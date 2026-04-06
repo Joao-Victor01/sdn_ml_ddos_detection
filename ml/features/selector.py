@@ -6,6 +6,8 @@ Selecao de features em duas etapas:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -31,12 +33,17 @@ class FeatureSelector:
         shap_sample_size: int = SHAP_SAMPLE_SIZE,
         random_state: int = RANDOM_STATE,
         save_plots: bool = True,
+        output_dir: Path | str = OUTPUTS_DIR,
+        compute_importance: bool = True,
     ) -> None:
         self._n_features = n_features
         self._var_thresh = VarianceThreshold(threshold=variance_threshold)
         self._shap_sample_size = shap_sample_size
         self._random_state = random_state
         self._save_plots = save_plots
+        self._output_dir = Path(output_dir)
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+        self._compute_importance_flag = compute_importance
         self._selected_features: list[str] = []
         self._shap_importance: pd.DataFrame | None = None
         self._fitted = False
@@ -62,22 +69,32 @@ class FeatureSelector:
             for feature in removed_var:
                 print(f"  - {feature}")
 
-        importance_df = self._compute_feature_importance(X_var, y)
-        self._shap_importance = importance_df
+        if self._compute_importance_flag:
+            importance_df = self._compute_feature_importance(X_var, y)
+            self._shap_importance = importance_df
 
-        if self._n_features is None:
-            self._selected_features = importance_df["feature"].tolist()
+            if self._n_features is None:
+                self._selected_features = importance_df["feature"].tolist()
+            else:
+                n_keep = min(self._n_features, len(importance_df))
+                self._selected_features = importance_df.head(n_keep)["feature"].tolist()
+
+            print("\n[FeatureSelector] Ranking de importancia:")
+            print(importance_df.to_string(index=False))
         else:
-            n_keep = min(self._n_features, len(importance_df))
-            self._selected_features = importance_df.head(n_keep)["feature"].tolist()
+            importance_df = pd.DataFrame(
+                {
+                    "feature": surviving_cols,
+                    "shap_importance": np.nan,
+                }
+            )
+            self._selected_features = surviving_cols
 
-        print("\n[FeatureSelector] Ranking de importancia:")
-        print(importance_df.to_string(index=False))
         print(f"\n[FeatureSelector] Features selecionadas ({len(self._selected_features)}):")
         for idx, feature in enumerate(self._selected_features, start=1):
             print(f"  {idx:2d}. {feature}")
 
-        if self._save_plots:
+        if self._save_plots and self._compute_importance_flag:
             self._save_importance_plot(importance_df)
 
         self._fitted = True
@@ -195,7 +212,6 @@ class FeatureSelector:
 
     def _save_importance_plot(self, importance_df: pd.DataFrame) -> None:
         try:
-            OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
             top_df = importance_df.head(20).sort_values("shap_importance", ascending=True)
 
             fig, ax = plt.subplots(figsize=(10, 6))
@@ -203,7 +219,7 @@ class FeatureSelector:
             ax.set_xlabel("Importancia media absoluta")
             ax.set_title("Feature Importance (SHAP/RandomForest)")
             plt.tight_layout()
-            path = OUTPUTS_DIR / "feature_importance_multiclass.png"
+            path = self._output_dir / "feature_importance_multiclass.png"
             plt.savefig(path, dpi=150, bbox_inches="tight")
             plt.close()
             print(f"[FeatureSelector] Plot de importancia salvo em {path}")

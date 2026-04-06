@@ -4,6 +4,8 @@ Balanceamento de classes com SMOTE para classificacao multiclasse.
 
 from __future__ import annotations
 
+from collections import Counter
+
 import numpy as np
 import pandas as pd
 from imblearn.over_sampling import SMOTE
@@ -19,10 +21,8 @@ class ClassBalancer:
         random_state: int = RANDOM_STATE,
         k_neighbors: int = SMOTE_K_NEIGHBORS,
     ) -> None:
-        self._smote = SMOTE(
-            random_state=random_state,
-            k_neighbors=k_neighbors,
-        )
+        self._random_state = random_state
+        self._k_neighbors = k_neighbors
 
     def fit_resample(
         self,
@@ -31,7 +31,29 @@ class ClassBalancer:
     ) -> tuple[np.ndarray, np.ndarray]:
         y_arr = np.array(y)
         self._print_distribution(y_arr, prefix="ANTES")
-        X_res, y_res = self._smote.fit_resample(X, y_arr)
+
+        class_counts = Counter(y_arr.tolist())
+        min_class_count = min(class_counts.values())
+        if min_class_count < 2:
+            print(
+                "[ClassBalancer] SMOTE ignorado: alguma classe tem menos de 2 amostras "
+                "na subamostra atual."
+            )
+            print(f"[ClassBalancer] Shape treino balanceado: {np.asarray(X).shape}")
+            return X, y_arr
+
+        effective_k = min(self._k_neighbors, min_class_count - 1)
+        if effective_k != self._k_neighbors:
+            print(
+                f"[ClassBalancer] Ajustando k_neighbors do SMOTE: "
+                f"{self._k_neighbors} -> {effective_k}"
+            )
+
+        smote = SMOTE(
+            random_state=self._random_state,
+            k_neighbors=effective_k,
+        )
+        X_res, y_res = smote.fit_resample(X, y_arr)
         self._print_distribution(y_res, prefix="DEPOIS")
         print(f"[ClassBalancer] Shape treino balanceado: {X_res.shape}")
         return X_res, y_res

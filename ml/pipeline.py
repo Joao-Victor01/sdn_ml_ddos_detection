@@ -19,15 +19,16 @@ from __future__ import annotations
 
 import warnings
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.base import clone
 from sklearn.model_selection import train_test_split
 
 from ml.config import (
     DATASET_NAME,
     OUTPUTS_DIR,
+    OUTPUTS_RUNS_DIR,
     RANDOM_STATE,
     TARGET_DECODING,
     TARGET_NAMES,
@@ -52,6 +53,12 @@ pd.set_option("display.max_columns", 7000)
 pd.set_option("display.max_rows", 200)
 
 
+def _slugify_run_id(run_id: str) -> str:
+    slug = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in run_id.strip())
+    slug = slug.strip("_")
+    return slug or "run"
+
+
 def run_pipeline(
     run_tuning: bool = True,
     run_eda: bool = True,
@@ -60,6 +67,11 @@ def run_pipeline(
     sample_size: int | None = None,
 ) -> None:
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUTS_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    ts_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+    effective_run_id = run_id or f"baseline_{ts_suffix}"
+    run_output_dir = OUTPUTS_RUNS_DIR / _slugify_run_id(effective_run_id)
+    run_output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 72)
     print("  Pipeline: Classificacao Multiclasse de Trafego SDN com MLP")
@@ -71,6 +83,8 @@ def run_pipeline(
     print(f"  RANDOM_STATE : {RANDOM_STATE}")
     print(f"  TEST_SIZE    : {TEST_SIZE} (70/30)")
     print(f"  SAMPLE_SIZE  : {sample_size if sample_size else 'dataset completo'}")
+    print(f"  RUN_ID       : {effective_run_id}")
+    print(f"  OUTPUT_DIR   : {run_output_dir}")
 
     print("\n[2/11] Carregando dataset...")
     loader = InSDNLoader()
@@ -99,16 +113,21 @@ def run_pipeline(
         f"{y_test.value_counts(normalize=True).sort_index().mul(100).round(2).to_dict()}"
     )
 
+    X_train_raw = X_train.reset_index(drop=True).copy()
+    y_train_raw = y_train.reset_index(drop=True).copy()
+    X_test_raw = X_test.reset_index(drop=True).copy()
+    y_test_raw = y_test.reset_index(drop=True).copy()
+
     print("\n[4/11] Limpeza e preparacao...")
     cleaner = DataCleaner()
-    X_train, y_train = cleaner.fit_transform(X_train.reset_index(drop=True), y_train.reset_index(drop=True))
+    X_train, y_train = cleaner.fit_transform(X_train_raw, y_train_raw)
     X_test, y_test = cleaner.transform(
-        X_test.reset_index(drop=True),
-        y_test.reset_index(drop=True),
+        X_test_raw,
+        y_test_raw,
     )
 
     print("\n[5/11] Selecao de features (VarianceThreshold + SHAP)...")
-    selector = FeatureSelector()
+    selector = FeatureSelector(output_dir=run_output_dir)
     X_train_sel = selector.fit_transform(X_train, y_train)
     X_test_sel = selector.transform(X_test)
     print(f"  Shape treino selecionado: {X_train_sel.shape}")
@@ -124,12 +143,12 @@ def run_pipeline(
     X_train_bal, y_train_bal = balancer.fit_resample(X_train_scaled, y_train)
 
     print("\n[8/11] Treinamento baseline + validacao cruzada...")
-    trainer = ModelTrainer(save_plots=True)
+    trainer = ModelTrainer(save_plots=True, output_dir=run_output_dir)
     model_baseline = trainer.train(X_train_bal, y_train_bal, label="baseline")
-    cv_results = trainer.cross_validate(X_train_bal, y_train_bal)
+    cv_results = trainer.cross_validate(X_train_raw, y_train_raw)
 
     print("\n[9/11] Avaliacao baseline em treino/teste...")
-    evaluator = ModelEvaluator(save_plots=True)
+    evaluator = ModelEvaluator(save_plots=True, output_dir=run_output_dir)
     train_result_baseline = evaluator.evaluate(
         model_baseline,
         X_train_scaled,
@@ -145,12 +164,12 @@ def run_pipeline(
         class_names=TARGET_NAMES,
     )
 
-    diagnostics = TrainingDiagnostics()
+    diagnostics = TrainingDiagnostics(output_dir=run_output_dir)
     diagnostics.plot_learning_curve(
-        clone(model_baseline),
-        X_train_bal,
-        y_train_bal,
+        X_train_raw,
+        y_train_raw,
         label="baseline",
+        estimator=model_baseline,
     )
     diagnostics.plot_generalization_gap(
         train_result_baseline,
@@ -189,10 +208,10 @@ def run_pipeline(
         )
 
         diagnostics.plot_learning_curve(
-            clone(model_best),
-            X_train_bal,
-            y_train_bal,
+            X_train_raw,
+            y_train_raw,
             label="otimizado",
+            estimator=model_best,
         )
         diagnostics.plot_generalization_gap(
             train_result_final,
@@ -213,13 +232,12 @@ def run_pipeline(
         model=model_best,
         imputer=cleaner.imputer,
         variance_filter=selector.variance_filter,
-        scaler=scaler.scaler,
+        scaler=scaler,
         selected_features=selector.selected_features,
     )
     ModelIO().save(artifacts)
 
     logger = MetricsLogger()
-    ts_suffix = datetime.now().strftime("%Y%m%d_%H%M")
     dataset_info = {
         "n_total": len(X),
         "n_train": len(X_train_scaled),
@@ -227,6 +245,9 @@ def run_pipeline(
         "n_features_before_selection": X_train.shape[1],
         "n_features_after_selection": len(selector.selected_features),
         "selected_features": selector.selected_features,
+        "binary_features_passthrough": scaler.binary_columns,
+        "scaled_features": scaler.scaled_columns,
+        "run_output_dir": str(run_output_dir),
         "class_distribution_total": {
             TARGET_DECODING[int(cls)]: int(count)
             for cls, count in y.value_counts().sort_index().items()
@@ -239,7 +260,7 @@ def run_pipeline(
 
     logger.log(
         test_result_baseline,
-        run_id=run_id or f"baseline_{ts_suffix}",
+        run_id=effective_run_id,
         params={
             "hidden_layer_sizes": str(model_baseline.hidden_layer_sizes),
             "alpha": model_baseline.alpha,
@@ -256,7 +277,7 @@ def run_pipeline(
     if run_tuning and tuner is not None:
         logger.log(
             test_result_final,
-            run_id=f"tuned_{ts_suffix}",
+            run_id=f"tuned_{effective_run_id}",
             params={**tuner.best_params_, "tuned": True},
             dataset_info=dataset_info,
             notes=(
@@ -271,7 +292,7 @@ def run_pipeline(
     print("\n" + "=" * 72)
     print("  Pipeline concluido com sucesso!")
     print("  Modelos/artifacts : models/")
-    print("  Graficos e relats : outputs/")
+    print(f"  Graficos e relats : {Path(run_output_dir).relative_to(OUTPUTS_DIR.parent)}/")
     print("  Historico         : outputs/metrics_history.json")
     print("=" * 72)
 

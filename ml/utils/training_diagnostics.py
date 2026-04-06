@@ -5,12 +5,16 @@ Ferramentas auxiliares para diagnostico de overfitting.
 from __future__ import annotations
 
 import json
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.base import clone
-from sklearn.model_selection import StratifiedKFold, learning_curve
+import pandas as pd
+from sklearn.metrics import f1_score
+from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.neural_network import MLPClassifier
 
 from ml.config import (
     CV_N_SPLITS,
@@ -19,6 +23,7 @@ from ml.config import (
     RANDOM_STATE,
 )
 from ml.evaluation.evaluator import EvaluationResult
+from ml.training.trainer import fit_fold_pipeline
 
 
 class TrainingDiagnostics:
@@ -30,29 +35,70 @@ class TrainingDiagnostics:
 
     def plot_learning_curve(
         self,
-        estimator,
-        X: np.ndarray,
-        y: np.ndarray,
+        X: pd.DataFrame,
+        y: pd.Series,
         label: str,
         scoring: str = "f1_macro",
+        estimator: MLPClassifier | None = None,
     ) -> Path:
+        if scoring != "f1_macro":
+            raise ValueError(
+                "TrainingDiagnostics: atualmente a curva de aprendizado suporta apenas "
+                "scoring='f1_macro'."
+            )
+
         cv = StratifiedKFold(
             n_splits=CV_N_SPLITS,
             shuffle=True,
             random_state=RANDOM_STATE,
         )
 
-        train_sizes, train_scores, valid_scores = learning_curve(
-            estimator=clone(estimator),
-            X=X,
-            y=y,
-            train_sizes=LEARNING_CURVE_TRAIN_SIZES,
-            cv=cv,
-            scoring=scoring,
-            n_jobs=-1,
-            shuffle=True,
-            random_state=RANDOM_STATE,
-        )
+        train_sizes_abs = self._resolve_train_sizes(len(X))
+        train_scores = np.zeros((len(train_sizes_abs), CV_N_SPLITS), dtype=float)
+        valid_scores = np.zeros((len(train_sizes_abs), CV_N_SPLITS), dtype=float)
+
+        for fold_idx, (train_idx, valid_idx) in enumerate(cv.split(X, y)):
+            X_fold_train = X.iloc[train_idx].reset_index(drop=True)
+            y_fold_train = y.iloc[train_idx].reset_index(drop=True)
+            X_fold_valid = X.iloc[valid_idx].reset_index(drop=True)
+            y_fold_valid = y.iloc[valid_idx].reset_index(drop=True)
+
+            for size_idx, train_size in enumerate(train_sizes_abs):
+                X_subset, y_subset = self._sample_stratified_subset(
+                    X_fold_train,
+                    y_fold_train,
+                    train_size,
+                )
+                with redirect_stdout(io.StringIO()):
+                    (
+                        model,
+                        X_train_scaled,
+                        y_train_arr,
+                        X_valid_scaled,
+                        y_valid_arr,
+                    ) = fit_fold_pipeline(
+                        X_subset,
+                        y_subset,
+                        X_fold_valid,
+                        y_fold_valid,
+                        random_state=RANDOM_STATE,
+                        base_model=estimator,
+                    )
+
+                train_pred = model.predict(X_train_scaled)
+                valid_pred = model.predict(X_valid_scaled)
+                train_scores[size_idx, fold_idx] = f1_score(
+                    y_train_arr,
+                    train_pred,
+                    average="macro",
+                    zero_division=0,
+                )
+                valid_scores[size_idx, fold_idx] = f1_score(
+                    y_valid_arr,
+                    valid_pred,
+                    average="macro",
+                    zero_division=0,
+                )
 
         train_mean = train_scores.mean(axis=1)
         train_std = train_scores.std(axis=1)
@@ -60,13 +106,23 @@ class TrainingDiagnostics:
         valid_std = valid_scores.std(axis=1)
 
         fig, ax = plt.subplots(figsize=(8, 5))
-        ax.plot(train_sizes, train_mean, "o-", color="steelblue", label="Treino")
-        ax.plot(train_sizes, valid_mean, "o-", color="darkorange", label="Validacao CV")
-        ax.fill_between(train_sizes, train_mean - train_std, train_mean + train_std, alpha=0.15)
-        ax.fill_between(train_sizes, valid_mean - valid_std, valid_mean + valid_std, alpha=0.15)
+        ax.plot(train_sizes_abs, train_mean, "o-", color="steelblue", label="Treino")
+        ax.plot(train_sizes_abs, valid_mean, "o-", color="darkorange", label="Validacao CV")
+        ax.fill_between(
+            train_sizes_abs,
+            train_mean - train_std,
+            train_mean + train_std,
+            alpha=0.15,
+        )
+        ax.fill_between(
+            train_sizes_abs,
+            valid_mean - valid_std,
+            valid_mean + valid_std,
+            alpha=0.15,
+        )
         ax.set_xlabel("Numero de amostras de treino")
         ax.set_ylabel(scoring)
-        ax.set_title(f"Curva de aprendizado — {label}")
+        ax.set_title(f"Curva de aprendizado limpa — {label}")
         ax.grid(alpha=0.25)
         ax.legend()
         plt.tight_layout()
@@ -154,3 +210,32 @@ class TrainingDiagnostics:
             json.dump(report, file, indent=2, ensure_ascii=False)
         print(f"[TrainingDiagnostics] Relatorio de generalizacao salvo em {path}")
         return path
+
+    def _resolve_train_sizes(self, n_samples: int) -> list[int]:
+        sizes: list[int] = []
+        for size in LEARNING_CURVE_TRAIN_SIZES:
+            if isinstance(size, float):
+                resolved = max(2, int(round(n_samples * size)))
+            else:
+                resolved = int(size)
+            sizes.append(min(resolved, n_samples))
+        return sorted(set(sizes))
+
+    def _sample_stratified_subset(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        train_size: int,
+    ) -> tuple[pd.DataFrame, pd.Series]:
+        if train_size >= len(X):
+            return X.reset_index(drop=True), y.reset_index(drop=True)
+
+        X_subset, _, y_subset, _ = train_test_split(
+            X,
+            y,
+            train_size=train_size,
+            random_state=RANDOM_STATE,
+            shuffle=True,
+            stratify=y,
+        )
+        return X_subset.reset_index(drop=True), y_subset.reset_index(drop=True)

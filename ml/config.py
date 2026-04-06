@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATASET_DIR = PROJECT_ROOT / "dataset" / "InSDN_DatasetCSV"
 MODELS_DIR = PROJECT_ROOT / "models"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
+OUTPUTS_RUNS_DIR = OUTPUTS_DIR / "runs"
 
 # Dataset
 DATASET_NAME: str = "InSDN_DatasetCSV"
@@ -68,6 +69,14 @@ RELEVANT_FEATURES: list[str] = [
     "ACK Flag Cnt",
     "Active Mean",
     "Idle Mean",
+]
+
+# Features binarias devem ser preservadas sem padronizacao.
+# O scaler tambem detecta colunas binarias observadas no treino, mas esta
+# lista explicita protege os casos conhecidos do dominio.
+BINARY_PASSTHROUGH_FEATURES: list[str] = [
+    "SYN Flag Cnt",
+    "ACK Flag Cnt",
 ]
 
 # Todas as features acima sao estatisticas nao negativas por definicao.
