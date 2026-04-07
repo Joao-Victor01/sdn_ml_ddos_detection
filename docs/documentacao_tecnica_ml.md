@@ -88,6 +88,99 @@ ml/
 
 ---
 
+## Diagramas
+
+## 1. Arquitetura Geral do Pacote
+
+```mermaid
+graph TD
+    A[config.py<br/>Configuracoes globais] --> B[pipeline.py<br/>Orquestrador]
+    B --> C[data/loader.py<br/>Carga e consolidacao do InSDN]
+    B --> D[preprocessing/cleaner.py<br/>Limpeza e imputacao]
+    B --> E[features/selector.py<br/>VarianceThreshold + SHAP]
+    B --> F[preprocessing/scaler.py<br/>StandardScaler]
+    B --> G[preprocessing/balancer.py<br/>SMOTE]
+    B --> H[models/mlp_model.py<br/>Definicao do MLP]
+    B --> I[training/trainer.py<br/>Treino + CV]
+    B --> J[training/tuner.py<br/>RandomizedSearchCV]
+    B --> K[evaluation/evaluator.py<br/>Metricas + Confusion Matrix]
+    B --> L[utils/training_diagnostics.py<br/>Learning curve + gap]
+    B --> M[persistence/model_io.py<br/>Salvar artefatos]
+    B --> N[utils/metrics_logger.py<br/>Historico JSON/CSV]
+    O[inference/predictor.py<br/>Inferencia] --> M
+    O --> A
+```
+
+## 2. Fluxo de Treinamento do Pipeline
+
+```mermaid
+graph TD
+    A[CSVs em dataset/InSDN_DatasetCSV] --> B[InSDNLoader]
+    B --> C[Concatenar arquivos]
+    C --> D[Normalizar Label]
+    D --> E[Mapear classes<br/>Normal / Flooding / Intrusao]
+    E --> F[Selecionar 26 features relevantes]
+    F --> G[train_test_split estratificado]
+
+    G --> H[Treino bruto]
+    G --> I[Teste bruto]
+
+    H --> J[DataCleaner.fit_transform]
+    I --> K[DataCleaner.transform]
+
+    J --> L[FeatureSelector.fit_transform]
+    K --> M[FeatureSelector.transform]
+
+    L --> N[FeatureScaler.fit_transform]
+    M --> O[FeatureScaler.transform]
+
+    N --> P[SMOTE apenas no treino]
+    P --> Q[MLP Baseline]
+
+    Q --> R[Validacao cruzada limpa]
+    Q --> S[Avaliacao em treino]
+    Q --> T[Avaliacao em teste]
+
+    S --> U[TrainingDiagnostics]
+    T --> U
+    R --> V[MetricsLogger]
+    U --> V
+    T --> V
+
+    Q --> W[ModelIO.save]
+    L --> W
+    J --> W
+    N --> W
+```
+
+## 3. Fluxo de Inferencia
+
+```mermaid
+graph TD
+    A[Novos fluxos brutos] --> B[DDoSPredictor.load]
+    B --> C[ModelIO.load]
+    C --> D[Artefatos carregados<br/>modelo + imputer + variance_filter + scaler + selected_features]
+    D --> E[Preprocessamento]
+    E --> F[Imputacao]
+    F --> G[VarianceThreshold.transform]
+    G --> H[Selecionar mesmas features do treino]
+    H --> I[Scaler.transform]
+    I --> J[MLP.predict / predict_proba]
+    J --> K[Classe final<br/>Normal / Flooding / Intrusao]
+```
+
+## 4. Arquitetura do MLP
+
+```mermaid
+graph TD
+    A[Entrada<br/>26 features] --> B[Camada oculta 1<br/>128 neuronios<br/>ReLU]
+    B --> C[Camada oculta 2<br/>64 neuronios<br/>ReLU]
+    C --> D[Saida<br/>3 neuronios]
+    D --> E[Probabilidades por classe<br/>Normal / Flooding / Intrusao]
+```
+
+---
+
 ## Arquitetura Geral
 
 O pipeline segue uma arquitetura em camadas:
