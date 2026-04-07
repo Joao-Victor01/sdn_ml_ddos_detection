@@ -150,7 +150,7 @@ class FeatureSelector:
         X_sample = X.iloc[idx]
         y_sample = np.array(y)[idx]
 
-        # Usamos um RandomForest auxiliar como "proxy" para calcular os SHAP values
+        # Usamos um RandomForest auxiliar como para calcular os SHAP values
         # SHAP com TreeExplainer é muito mais rápido que com o MLP direto
         print(
             f"[FeatureSelector] Treinando RandomForest auxiliar para SHAP "

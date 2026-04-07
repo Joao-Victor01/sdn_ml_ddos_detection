@@ -38,7 +38,7 @@ CLASS_GROUP_MAPPING: dict[str, str] = {
 }
 TARGET_NAMES: list[str] = ["Normal", "Flooding", "Intrusao"]  # ordem define o índice numérico
 
-# Converte nome de classe → índice (ex.: "Flooding" → 1)
+# Converte nome de classe índice (ex.: "Flooding" → 1)
 TARGET_ENCODING: dict[str, int] = {
     label: idx for idx, label in enumerate(TARGET_NAMES)
 }
