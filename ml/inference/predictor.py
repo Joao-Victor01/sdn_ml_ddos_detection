@@ -13,7 +13,7 @@ from ml.persistence.model_io import ModelIO, PipelineArtifacts
 
 class DDoSPredictor:
     """
-    Mantem o nome por compatibilidade, mas agora realiza classificacao
+    realiza classificacao
     multiclasse: Normal / Flooding / Intrusao.
     """
 
@@ -22,6 +22,7 @@ class DDoSPredictor:
         self._artifacts: PipelineArtifacts | None = None
 
     def load(self) -> "DDoSPredictor":
+        # Carrega tudo de uma vez para a inferência não precisar conhecer detalhes do treinamento.
         self._artifacts = self._io.load()
         print("[DDoSPredictor] Pipeline carregado com sucesso.")
         print(
@@ -31,6 +32,7 @@ class DDoSPredictor:
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        # Primeiro passamos pelo mesmo pré-processamento do treino, depois o modelo prevê.
         X_processed = self._preprocess(X)
         return self._artifacts.model.predict(X_processed)
 
@@ -38,6 +40,7 @@ class DDoSPredictor:
         return [TARGET_DECODING[int(cls)] for cls in self.predict(X)]
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        # Essa versão devolve as probabilidades por classe, útil para confiança e inspeção.
         X_processed = self._preprocess(X)
         return self._artifacts.model.predict_proba(X_processed)
 
@@ -45,12 +48,13 @@ class DDoSPredictor:
         proba = self.predict_proba(X)
         pred = self.predict(X)
         labels = [TARGET_DECODING[int(cls)] for cls in pred]
+        # Confiança = probabilidade máxima entre as classes — quanto mais perto de 1, mais certo
         confidence = proba.max(axis=1)
 
         return pd.DataFrame(
             {
-                "prediction": pred,
-                "label": labels,
+                "prediction": pred,     # índice numérico da classe (0, 1 ou 2)
+                "label": labels,        # nome legível: Normal, Flooding ou Intrusao
                 "confidence": confidence,
             }
         )
@@ -60,18 +64,23 @@ class DDoSPredictor:
             raise RuntimeError("DDoSPredictor: chame load() antes de predict().")
 
         artifacts = self._artifacts
+
+        # Replica a mesma sequência de pré-processamento do treino:
+        # infinitos → NaN → imputação → filtragem de variância → seleção → escalonamento
         X_clean = X.replace([np.inf, -np.inf], np.nan)
         X_imputed = pd.DataFrame(
-            artifacts.imputer.transform(X_clean),
+            artifacts.imputer.transform(X_clean),  # usa as medianas aprendidas no treino
             columns=X_clean.columns,
         )
 
+        # Remove features de variância zero (as mesmas que foram removidas no treino)
         surviving_cols = X_imputed.columns[artifacts.variance_filter.get_support()].tolist()
         X_var = pd.DataFrame(
             artifacts.variance_filter.transform(X_imputed),
             columns=surviving_cols,
         )
 
+        # Garante que todas as features que o modelo espera estão presentes nos dados de entrada
         missing_features = [f for f in artifacts.selected_features if f not in X_var.columns]
         if missing_features:
             raise ValueError(
@@ -80,5 +89,6 @@ class DDoSPredictor:
                 f"Features esperadas: {artifacts.selected_features}"
             )
 
+        # Seleciona e ordena as features na mesma ordem do treino (importante para o MLP)
         X_sel = X_var[artifacts.selected_features]
-        return artifacts.scaler.transform(X_sel)
+        return artifacts.scaler.transform(X_sel)  # z-score com parâmetros do treino

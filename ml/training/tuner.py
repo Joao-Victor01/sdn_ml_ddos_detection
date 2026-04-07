@@ -43,12 +43,17 @@ class HyperparameterTuner:
         X_train: np.ndarray,
         y_train: np.ndarray,
     ) -> MLPClassifier:
+        # O tuning entra depois do baseline: a ideia é procurar melhorias sem trocar todo o pipeline.
+        # StratifiedKFold dentro do tuning garante que cada combinação seja avaliada
+        # nas mesmas proporções de classes — sem isso, uma dobra desequilibrada
+        # poderia favorecer combinações de hiperparâmetros que não generalizam bem
         cv = StratifiedKFold(
             n_splits=self._cv_n_splits,
             shuffle=True,
             random_state=self._random_state,
         )
 
+        # Modelo base com parâmetros fixos — só os parâmetros do espaço de busca variam
         base_mlp = MLPClassifier(
             activation="relu",
             solver="adam",
@@ -58,16 +63,18 @@ class HyperparameterTuner:
             verbose=False,
         )
 
+        # RandomizedSearchCV testa N combinações aleatórias do espaço definido em config.py
+        # Mais rápido que GridSearchCV (que testa todas as combinações) e geralmente eficaz
         self._search = RandomizedSearchCV(
             estimator=base_mlp,
             param_distributions=self._param_distributions,
-            n_iter=self._n_iter,
+            n_iter=self._n_iter,      # quantas combinações aleatórias testar
             cv=cv,
             scoring=self._scoring,
-            n_jobs=-1,
+            n_jobs=-1,                # usa todos os núcleos disponíveis
             random_state=self._random_state,
             verbose=1,
-            return_train_score=True,
+            return_train_score=True,  # útil para diagnóstico de overfitting no tuning
         )
 
         print(
@@ -87,6 +94,7 @@ class HyperparameterTuner:
             print(f"    {key}: {value}")
         print(f"  Melhor {self._scoring} (CV): {self._search.best_score_:.4f}")
 
+        # O sklearn já devolve o melhor estimador reajustado com todo o conjunto de treino.
         return self._search.best_estimator_
 
     @property

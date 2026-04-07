@@ -32,6 +32,8 @@ class ClassBalancer:
         y_arr = np.array(y)
         self._print_distribution(y_arr, prefix="ANTES")
 
+        # Verifica se há amostras suficientes para o SMOTE funcionar
+        # (precisa de pelo menos 2 amostras por classe para criar vizinhos)
         class_counts = Counter(y_arr.tolist())
         min_class_count = min(class_counts.values())
         if min_class_count < 2:
@@ -42,6 +44,7 @@ class ClassBalancer:
             print(f"[ClassBalancer] Shape treino balanceado: {np.asarray(X).shape}")
             return X, y_arr
 
+        # k_neighbors não pode ser maior que (min_samples - 1) — ajusta automaticamente
         effective_k = min(self._k_neighbors, min_class_count - 1)
         if effective_k != self._k_neighbors:
             print(
@@ -49,6 +52,8 @@ class ClassBalancer:
                 f"{self._k_neighbors} -> {effective_k}"
             )
 
+        # SMOTE cria amostras sintéticas da classe minoritária interpolando entre
+        # amostras reais — mais inteligente do que simplesmente duplicar linhas
         smote = SMOTE(
             random_state=self._random_state,
             k_neighbors=effective_k,

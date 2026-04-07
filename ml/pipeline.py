@@ -54,6 +54,7 @@ pd.set_option("display.max_rows", 200)
 
 
 def _slugify_run_id(run_id: str) -> str:
+    # Deixa o run_id seguro para virar nome de pasta sem surpresas.
     slug = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in run_id.strip())
     slug = slug.strip("_")
     return slug or "run"
@@ -66,6 +67,7 @@ def run_pipeline(
     run_id: str | None = None,
     sample_size: int | None = None,
 ) -> None:
+    # Cada execução ganha sua própria pasta para não misturar gráficos novos com antigos.
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUTS_RUNS_DIR.mkdir(parents=True, exist_ok=True)
     ts_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -113,6 +115,7 @@ def run_pipeline(
         f"{y_test.value_counts(normalize=True).sort_index().mul(100).round(2).to_dict()}"
     )
 
+    # Guardamos uma cópia "bruta" porque os diagnósticos limpos refazem o pipeline por dobra.
     X_train_raw = X_train.reset_index(drop=True).copy()
     y_train_raw = y_train.reset_index(drop=True).copy()
     X_test_raw = X_test.reset_index(drop=True).copy()
@@ -145,6 +148,7 @@ def run_pipeline(
     print("\n[8/11] Treinamento baseline + validacao cruzada...")
     trainer = ModelTrainer(save_plots=True, output_dir=run_output_dir)
     model_baseline = trainer.train(X_train_bal, y_train_bal, label="baseline")
+    # A CV usa os dados crus do treino para remontar o preprocessamento em cada fold.
     cv_results = trainer.cross_validate(X_train_raw, y_train_raw)
 
     print("\n[9/11] Avaliacao baseline em treino/teste...")
@@ -238,6 +242,7 @@ def run_pipeline(
     ModelIO().save(artifacts)
 
     logger = MetricsLogger()
+    # Este bloco vira o "cartão de visita" da run no histórico JSON/CSV.
     dataset_info = {
         "n_total": len(X),
         "n_train": len(X_train_scaled),

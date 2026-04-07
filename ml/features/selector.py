@@ -54,6 +54,8 @@ class FeatureSelector:
         y: pd.Series | np.ndarray,
     ) -> pd.DataFrame:
         cols_before = X.columns.tolist()
+
+        # Etapa 1: remove features completamente constantes (não contribuem com nada)
         self._var_thresh.fit(X)
         surviving_cols = X.columns[self._var_thresh.get_support()].tolist()
 
@@ -69,10 +71,12 @@ class FeatureSelector:
             for feature in removed_var:
                 print(f"  - {feature}")
 
+        # Etapa 2: rankeia features por importância (SHAP ou RandomForest como fallback)
         if self._compute_importance_flag:
             importance_df = self._compute_feature_importance(X_var, y)
             self._shap_importance = importance_df
 
+            # Se N_FEATURES_TO_SELECT for None, mantém todas; senão pega só as top N
             if self._n_features is None:
                 self._selected_features = importance_df["feature"].tolist()
             else:
@@ -82,6 +86,7 @@ class FeatureSelector:
             print("\n[FeatureSelector] Ranking de importancia:")
             print(importance_df.to_string(index=False))
         else:
+            # Quando compute_importance=False (dentro do CV), pula o SHAP para economizar tempo
             importance_df = pd.DataFrame(
                 {
                     "feature": surviving_cols,
@@ -138,12 +143,15 @@ class FeatureSelector:
             print("[FeatureSelector] shap nao instalado; usando feature_importances_ como fallback.")
             return self._fallback_importance(X, y)
 
+        # Limita a amostra para o SHAP não demorar demais (10k amostras geralmente já basta)
         sample_size = min(self._shap_sample_size, len(X))
         rng = np.random.RandomState(self._random_state)
         idx = rng.choice(len(X), sample_size, replace=False)
         X_sample = X.iloc[idx]
         y_sample = np.array(y)[idx]
 
+        # Usamos um RandomForest auxiliar como "proxy" para calcular os SHAP values
+        # SHAP com TreeExplainer é muito mais rápido que com o MLP direto
         print(
             f"[FeatureSelector] Treinando RandomForest auxiliar para SHAP "
             f"(amostra: {sample_size:,})..."
@@ -156,9 +164,11 @@ class FeatureSelector:
         )
         rf.fit(X_sample, y_sample)
 
+        # SHAP explica quanto cada feature contribuiu (positiva ou negativamente) para a predição
         print("[FeatureSelector] Calculando importancias SHAP...")
         explainer = shap.TreeExplainer(rf)
         shap_values = explainer.shap_values(X_sample)
+        # Reduz para uma única importância por feature (média absoluta entre classes)
         importances = self._reduce_multiclass_shap(shap_values, X_sample.shape[1])
 
         return pd.DataFrame(

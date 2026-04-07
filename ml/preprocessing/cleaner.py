@@ -39,11 +39,16 @@ class DataCleaner:
     ) -> tuple[pd.DataFrame, pd.Series]:
         """
         Limpa o conjunto de treino e ajusta o imputador.
+        Chamado APENAS no treino — o imputador aprende as estatísticas aqui.
         """
         self._columns = [col for col in X.columns if col != "__row_hash__"]
         X_clean, y_clean, dupes_removed = self._drop_duplicates(X, y)
 
+        # Substitui infinitos e negativos inválidos por NaN, depois imputa
         X_clean = self._sanitize_numeric_noise(X_clean)
+
+        # O fit aprende a mediana de cada coluna com base nos dados de TREINO
+        # Para o teste, usaremos essa mesma mediana (no método transform)
         self._imputer.fit(X_clean)
         X_imputed = pd.DataFrame(
             self._imputer.transform(X_clean),
@@ -100,6 +105,9 @@ class DataCleaner:
         df_tmp = X.copy()
         df_tmp["__target__"] = y.values
         before = len(df_tmp)
+
+        # Usa o hash da linha (calculado no loader) para detectar duplicatas de forma eficiente
+        # Considera o target junto: a mesma linha com classes diferentes NÃO é duplicata
         if "__row_hash__" in df_tmp.columns:
             df_tmp = df_tmp.drop_duplicates(subset=["__row_hash__", "__target__"], keep="first")
             df_tmp = df_tmp.drop(columns=["__row_hash__"])
@@ -112,8 +120,12 @@ class DataCleaner:
 
     def _sanitize_numeric_noise(self, X: pd.DataFrame) -> pd.DataFrame:
         X_clean = X.copy()
+
+        # Infinitos aparecem quando há divisão por zero na extração de features (ex.: Byts/s)
         X_clean = X_clean.replace([np.inf, -np.inf], np.nan)
 
+        # Features de rede não podem ser negativas (duração, bytes, pacotes etc.)
+        # Valores negativos são ruído da ferramenta de extração — tratamos como ausentes
         invalid_negative_total = 0
         for col in self._non_negative_columns:
             if col in X_clean.columns:

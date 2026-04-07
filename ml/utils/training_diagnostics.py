@@ -47,6 +47,7 @@ class TrainingDiagnostics:
                 "scoring='f1_macro'."
             )
 
+        # A curva segue a mesma ideia da CV limpa: cada dobra reconstrói o pipeline do zero.
         cv = StratifiedKFold(
             n_splits=CV_N_SPLITS,
             shuffle=True,
@@ -64,11 +65,13 @@ class TrainingDiagnostics:
             y_fold_valid = y.iloc[valid_idx].reset_index(drop=True)
 
             for size_idx, train_size in enumerate(train_sizes_abs):
+                # Aqui simulamos "e se eu tivesse menos dados de treino?" sem perder a proporção das classes.
                 X_subset, y_subset = self._sample_stratified_subset(
                     X_fold_train,
                     y_fold_train,
                     train_size,
                 )
+                # Silenciamos os prints internos para o gráfico não virar uma parede de logs.
                 with redirect_stdout(io.StringIO()):
                     (
                         model,
@@ -100,6 +103,7 @@ class TrainingDiagnostics:
                     zero_division=0,
                 )
 
+        # Depois juntamos as dobras em média + desvio para mostrar tendência, não sorte de um fold só.
         train_mean = train_scores.mean(axis=1)
         train_std = train_scores.std(axis=1)
         valid_mean = valid_scores.mean(axis=1)
@@ -214,6 +218,7 @@ class TrainingDiagnostics:
     def _resolve_train_sizes(self, n_samples: int) -> list[int]:
         sizes: list[int] = []
         for size in LEARNING_CURVE_TRAIN_SIZES:
+            # Aceita fração (0.1, 0.25...) ou tamanho absoluto, e converte tudo para número de linhas.
             if isinstance(size, float):
                 resolved = max(2, int(round(n_samples * size)))
             else:
@@ -230,6 +235,7 @@ class TrainingDiagnostics:
         if train_size >= len(X):
             return X.reset_index(drop=True), y.reset_index(drop=True)
 
+        # O subconjunto continua estratificado para a learning curve não ficar torta por acaso.
         X_subset, _, y_subset, _ = train_test_split(
             X,
             y,

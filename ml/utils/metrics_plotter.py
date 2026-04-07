@@ -40,6 +40,7 @@ class MetricsPlotter:
             print("[MetricsPlotter] plot_evolution requer pelo menos 2 runs.")
             return
 
+        # Aqui a ideia é simples: acompanhar como as métricas evoluíram de run para run.
         x = np.arange(len(df))
         fig, ax = plt.subplots(figsize=(12, 6))
         for idx, (metric, label) in enumerate(DISPLAY_METRICS):
@@ -67,6 +68,7 @@ class MetricsPlotter:
         if a is None or b is None:
             return
 
+        # Comparação direta barra a barra: bom para ver rapidamente quem ganhou em cada critério.
         metrics_a = [a["metrics"][metric] for metric, _ in DISPLAY_METRICS]
         metrics_b = [b["metrics"][metric] for metric, _ in DISPLAY_METRICS]
         x = np.arange(len(DISPLAY_METRICS))
@@ -96,6 +98,7 @@ class MetricsPlotter:
         if entry is None:
             return
 
+        # O radar não é o mais "científico", mas ajuda muito numa leitura visual rápida de equilíbrio.
         values = [entry["metrics"][metric] for metric, _ in DISPLAY_METRICS]
         values += [values[0]]
         labels = [label for _, label in DISPLAY_METRICS]
@@ -122,6 +125,7 @@ class MetricsPlotter:
         if entry is None:
             return
 
+        # Puxa a matriz salva no histórico para poder revisitar a run sem rerodar o modelo.
         cm = np.array(entry.get("confusion_matrix", []), dtype=float)
         class_names = entry.get("class_names", [f"Classe {idx}" for idx in range(len(cm))])
         if cm.size == 0:
@@ -158,6 +162,7 @@ class MetricsPlotter:
             print("[MetricsPlotter] Nenhuma run registrada.")
             return
 
+        # O dashboard junta uma visão "macro" em uma figura só para consulta rápida.
         fig, axes = plt.subplots(2, 1, figsize=(13, 9))
         x = np.arange(len(df))
 
@@ -211,6 +216,7 @@ class MetricsPlotter:
     def _to_dataframe(self) -> pd.DataFrame:
         rows = []
         for entry in self._history:
+            # Achata a estrutura do JSON para ficar fácil de plotar com pandas/matplotlib.
             row = {"run_id": entry["run_id"], "label": entry.get("label", ""), "timestamp": entry["timestamp"]}
             row.update(entry.get("metrics", {}))
             rows.append(row)

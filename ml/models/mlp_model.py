@@ -31,16 +31,17 @@ def build_baseline_mlp(random_state: int = RANDOM_STATE) -> MLPClassifier:
     -------
     MLPClassifier configurado (nao treinado).
     """
+    # Todos os hiperparâmetros vêm de config.py — nenhum valor hardcoded aqui
     return MLPClassifier(
-        hidden_layer_sizes=MLP_HIDDEN_LAYERS,
-        activation=MLP_ACTIVATION,
-        solver=MLP_SOLVER,
-        alpha=MLP_ALPHA,
-        batch_size="auto",
+        hidden_layer_sizes=MLP_HIDDEN_LAYERS,  # arquitetura: (128, 64) → 2 camadas ocultas
+        activation=MLP_ACTIVATION,             # relu: rápido e evita gradiente zero
+        solver=MLP_SOLVER,                     # adam: otimizador adaptativo
+        alpha=MLP_ALPHA,                       # regularização L2 (penaliza pesos grandes)
+        batch_size="auto",                     # sklearn define automaticamente (~200 amostras)
         learning_rate=MLP_LEARNING_RATE,
         max_iter=MLP_MAX_ITER,
         random_state=random_state,
-        early_stopping=MLP_EARLY_STOP,
+        early_stopping=MLP_EARLY_STOP,         # para antes de atingir max_iter se não melhorar
         validation_fraction=MLP_VAL_FRACTION,
         n_iter_no_change=MLP_N_ITER_NO_CHG,
         verbose=False,
@@ -58,6 +59,8 @@ def build_mlp_from_params(params: dict, random_state: int = RANDOM_STATE) -> MLP
     ----------
     params : dict  — hiperparâmetros do RandomizedSearchCV
     """
+    # Parâmetros fixos garantem que a busca não teste combinações absurdas
+    # (ex.: solver diferente, sem early stopping etc.)
     return MLPClassifier(
         activation="relu",
         solver="adam",
@@ -65,5 +68,5 @@ def build_mlp_from_params(params: dict, random_state: int = RANDOM_STATE) -> MLP
         validation_fraction=MLP_VAL_FRACTION,
         random_state=random_state,
         verbose=False,
-        **params,
+        **params,  # injeta os hiperparâmetros variáveis vindos do RandomizedSearchCV
     )

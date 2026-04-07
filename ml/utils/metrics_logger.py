@@ -34,8 +34,9 @@ class MetricsLogger:
         notes: str = "",
     ) -> dict:
         ts = datetime.now()
+        # Monta a entrada completa do experimento — tudo que pode ser útil para comparar runs
         entry: dict[str, Any] = {
-            "run_id": run_id or f"run_{ts.strftime('%Y%m%d_%H%M%S')}",
+            "run_id": run_id or f"run_{ts.strftime('%Y%m%d_%H%M%S')}",  # ID gerado se não passado
             "timestamp": ts.isoformat(),
             "label": result.label,
             "class_names": result.class_names,
@@ -50,14 +51,14 @@ class MetricsLogger:
                 "gm": round(result.gm, 6),
                 "roc_auc_ovr_macro": round(result.roc_auc_ovr_macro, 6),
             },
-            "confusion_matrix": result.confusion_matrix,
-            "params": params or {},
-            "dataset_info": dataset_info or {},
+            "confusion_matrix": result.confusion_matrix,  # matriz completa para visualização futura
+            "params": params or {},                        # hiperparâmetros usados nesta run
+            "dataset_info": dataset_info or {},            # metadados do dataset (tamanho, distribuição etc.)
             "notes": notes,
         }
 
         self._history.append(entry)
-        self._save()
+        self._save()  # persiste imediatamente — não perde nada se o processo cair depois
         print(f"[MetricsLogger] Run '{entry['run_id']}' registrada -> {self._path}")
         return entry
 
@@ -68,6 +69,7 @@ class MetricsLogger:
 
         rows = []
         for entry in self._history:
+            # O CSV fica "achatado" para abrir fácil no pandas, Excel ou LibreOffice.
             row: dict[str, Any] = {
                 "run_id": entry["run_id"],
                 "timestamp": entry["timestamp"],
@@ -91,6 +93,7 @@ class MetricsLogger:
 
         rows = []
         for entry in self._history:
+            # Aqui formatamos para leitura humana; por isso já sai com porcentagem e arredondamento.
             metrics = entry.get("metrics", {})
             rows.append(
                 {

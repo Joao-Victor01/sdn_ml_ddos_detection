@@ -28,6 +28,8 @@ from ml.config import (
 class DataLoader(Protocol):
     """Interface minima para carregadores de dataset."""
 
+    # Protocolo (interface) — define o contrato que qualquer loader deve seguir.
+    # Isso facilita trocar a fonte de dados no futuro sem mudar o pipeline.
     def load(self, sample_size: int | None = None) -> tuple[pd.DataFrame, pd.Series]:
         ...
 
@@ -58,16 +60,20 @@ class InSDNLoader:
         data = self._read_all_csvs()
         self._validate_columns(data)
 
+        # Normaliza os labels: remove espaços acidentais e mapeia para os 3 grupos
         data[TARGET_COL] = data[TARGET_COL].astype(str).str.strip()
         mapped_labels = data[TARGET_COL].map(CLASS_GROUP_MAPPING)
+
+        # Descarta linhas com labels que não fazem parte do mapeamento definido
         keep_mask = mapped_labels.notna()
         dropped = int((~keep_mask).sum())
         if dropped:
             print(f"[InSDNLoader] Linhas descartadas por label nao mapeado: {dropped:,}")
         data = data.loc[keep_mask].copy()
         data["__target_group__"] = mapped_labels.loc[keep_mask]
-        data["__target__"] = data["__target_group__"].map(TARGET_ENCODING)
+        data["__target__"] = data["__target_group__"].map(TARGET_ENCODING)  # nome → número
 
+        # Amostragem estratificada — mantém a proporção de classes mesmo em subconjuntos
         if sample_size is not None and 0 < sample_size < len(data):
             data, _ = train_test_split(
                 data,
@@ -79,6 +85,8 @@ class InSDNLoader:
             data = data.reset_index(drop=True)
             print(f"[InSDNLoader] Amostra estratificada aplicada: {sample_size:,} linhas")
 
+        # Seleciona apenas as features relevantes + cria um hash por linha para detectar duplicatas
+        # O hash considera todas as colunas brutas, não só as features selecionadas
         X = data[RELEVANT_FEATURES].copy()
         X["__row_hash__"] = pd.util.hash_pandas_object(
             data.drop(columns=["__target_group__", "__target__"]),
@@ -144,6 +152,8 @@ class InSDNLoader:
                 f"Nenhum CSV encontrado em {self._dir}."
             )
 
+        # Lê cada CSV separadamente e depois concatena tudo em um único DataFrame
+        # O InSDN vem dividido em vários arquivos (Normal, OVS, metasploitable etc.)
         frames: list[pd.DataFrame] = []
         print(f"[InSDNLoader] Lendo {len(files)} arquivos CSV de {self._dir}")
         for path in files:
@@ -151,6 +161,7 @@ class InSDNLoader:
             print(f"  - {path.name:<22} {df.shape}")
             frames.append(df)
 
+        # ignore_index=True reinicia os índices após concatenar — evita índices duplicados
         return pd.concat(frames, ignore_index=True)
 
     def _validate_columns(self, data: pd.DataFrame) -> None:

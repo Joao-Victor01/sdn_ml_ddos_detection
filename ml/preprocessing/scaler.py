@@ -47,10 +47,13 @@ class FeatureScaler:
         """
         X_df, return_dataframe = self._to_dataframe(X, use_known_columns=False)
         self._columns = X_df.columns.tolist()
+
+        # Detecta quais colunas são binárias (só 0 e 1) para não escaloná-las
         self._binary_columns = self._detect_binary_columns(X_df)
         self._scaled_columns = [col for col in self._columns if col not in self._binary_columns]
 
         X_scaled = X_df.copy()
+        # Aplica z-score apenas nas colunas contínuas — binárias ficam intactas
         if self._scaled_columns:
             X_scaled.loc[:, self._scaled_columns] = self._scaler.fit_transform(
                 X_df[self._scaled_columns]

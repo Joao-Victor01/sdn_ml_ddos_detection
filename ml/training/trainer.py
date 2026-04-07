@@ -44,8 +44,9 @@ def fit_fold_pipeline(
     Ajusta todo o pipeline de preprocessamento dentro de uma dobra.
 
     Isso evita que limpeza, selecao, escalonamento e SMOTE "vejam" a parte
-    de validacao antes da hora.
+    de validacao antes da hora — cada dobra é tratada como um experimento isolado.
     """
+    # Limpeza: o fit aprende as medianas só do treino da dobra, não do conjunto todo
     cleaner = DataCleaner()
     X_train_clean, y_train_clean = cleaner.fit_transform(
         X_train.reset_index(drop=True),
@@ -56,17 +57,21 @@ def fit_fold_pipeline(
         y_valid.reset_index(drop=True),
     )
 
+    # Seleção: compute_importance=False pula o SHAP — muito lento para rodar em cada dobra
     selector = FeatureSelector(save_plots=False, compute_importance=False)
     X_train_sel = selector.fit_transform(X_train_clean, y_train_clean)
     X_valid_sel = selector.transform(X_valid_clean)
 
+    # Escalonamento: fit apenas no treino da dobra
     scaler = FeatureScaler()
     X_train_scaled = scaler.fit_transform(X_train_sel)
     X_valid_scaled = scaler.transform(X_valid_sel)
 
+    # SMOTE apenas no treino — nunca na validação
     balancer = ClassBalancer(random_state=random_state)
     X_train_bal, y_train_bal = balancer.fit_resample(X_train_scaled, y_train_clean)
 
+    # clone() cria uma cópia "limpa" do modelo (sem pesos treinados) para esta dobra
     model = clone(base_model) if base_model is not None else build_baseline_mlp(random_state)
     model.fit(X_train_bal, np.asarray(y_train_bal))
 
@@ -131,6 +136,7 @@ class ModelTrainer:
         X_train: pd.DataFrame,
         y_train: pd.Series,
     ) -> dict[str, tuple[float, float]]:
+        # StratifiedKFold garante que cada dobra tem a mesma proporção de classes
         cv = StratifiedKFold(
             n_splits=self._cv_n_splits,
             shuffle=True,
@@ -156,6 +162,7 @@ class ModelTrainer:
             X_fold_valid = X_train.iloc[valid_idx].reset_index(drop=True)
             y_fold_valid = y_train.iloc[valid_idx].reset_index(drop=True)
 
+            # redirect_stdout suprime os prints do pipeline interno para não poluir o log do CV
             with redirect_stdout(io.StringIO()):
                 model, _, _, X_valid_scaled, y_valid_arr = fit_fold_pipeline(
                     X_fold_train,
@@ -165,6 +172,7 @@ class ModelTrainer:
                     random_state=self._random_state,
                 )
 
+            # Calcula todas as métricas para esta dobra e acumula
             y_pred = model.predict(X_valid_scaled)
             history["accuracy"].append(float(accuracy_score(y_valid_arr, y_pred)))
             history["balanced_accuracy"].append(
@@ -187,6 +195,7 @@ class ModelTrainer:
                 float(recall_score(y_valid_arr, y_pred, average="macro", zero_division=0))
             )
 
+        # Retorna média ± desvio padrão de cada métrica — o desvio indica estabilidade entre dobras
         results: dict[str, tuple[float, float]] = {}
         for metric in scoring:
             values = np.array(history[metric], dtype=float)

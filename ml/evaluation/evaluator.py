@@ -93,10 +93,18 @@ class ModelEvaluator:
     ) -> EvaluationResult:
         class_names = class_names or TARGET_NAMES
 
+        # Primeiro geramos previsões e probabilidades; o resto das métricas nasce daqui.
         y_pred = model.predict(X)
-        y_pred_proba = model.predict_proba(X)
+        y_pred_proba = model.predict_proba(X)  # probabilidades para ROC-AUC multiclasse
         cm = confusion_matrix(y_true, y_pred, labels=list(range(len(class_names))))
 
+        # Calcula um conjunto amplo de métricas — várias perspectivas do desempenho:
+        # - accuracy: % de acertos totais (enganosa quando classes são desbalanceadas)
+        # - balanced_accuracy: média do recall por classe (corrige o desbalanceamento)
+        # - f1_macro: equilíbrio entre precision e recall, tratando todas as classes igualmente
+        # - mcc: correlação de Matthews — considerada a melhor métrica única para multiclasse
+        # - gm (Geometric Mean): raiz do produto dos recalls por classe
+        # - roc_auc: área sob a curva ROC (OvR = One-vs-Rest para multiclasse)
         result = EvaluationResult(
             label=label,
             accuracy=float(accuracy_score(y_true, y_pred)),
@@ -139,6 +147,7 @@ class ModelEvaluator:
         print(result.classification_report)
 
         if self._save_plots:
+            # O slug vira um nome de arquivo limpo para os plots dessa avaliação.
             slug = label.lower().replace(" ", "_").replace("(", "").replace(")", "")
             self._plot_confusion_matrix(cm, class_names, label, slug)
 
@@ -206,6 +215,8 @@ class ModelEvaluator:
         y_true: np.ndarray,
         y_pred: np.ndarray,
     ) -> float:
+        # A API do geometric_mean_score mudou entre versões do imbalanced-learn,
+        # então tentamos diferentes assinaturas para manter compatibilidade
         for average in ("macro", "multiclass", None):
             try:
                 kwargs = {}

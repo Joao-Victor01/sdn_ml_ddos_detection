@@ -1,12 +1,8 @@
 """
 Persistência de artefatos do pipeline ML.
 
-SRP: responsável exclusivamente por salvar e carregar todos os objetos
+responsável exclusivamente por salvar e carregar todos os objetos
 fitados durante o treinamento.
-
-Boas práticas: salvar TODOS os transformadores junto ao modelo.
-Em produção, os novos dados devem passar pelas mesmas transformações,
-usando os MESMOS objetos (com os mesmos parâmetros aprendidos no treino).
 
 Artefatos salvos:
   mlp_ddos_insdn.joblib    — modelo MLP treinado
@@ -77,10 +73,12 @@ class ModelIO:
         """
         Salva todos os artefatos do pipeline em models/.
 
-        Cria o diretório se não existir.
+        Salva cada objeto fitado separadamente com joblib — mais eficiente que pickle
+        para arrays NumPy (usa compressão e mmap). Cria o diretório se não existir.
         """
         self._dir.mkdir(parents=True, exist_ok=True)
 
+        # Salvamos tudo separadinho porque isso facilita trocar só uma peça depois, se precisar.
         pairs = [
             ("model",             artifacts.model),
             ("imputer",           artifacts.imputer),
@@ -128,6 +126,7 @@ class ModelIO:
                 loaded[key] = joblib.load(f)
             print(f"  ✓ {fname}")
 
+        # No fim remontamos um objeto único para a inferência trabalhar sem se preocupar com arquivos.
         return PipelineArtifacts(
             model=loaded["model"],
             imputer=loaded["imputer"],
