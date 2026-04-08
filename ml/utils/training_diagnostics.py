@@ -9,7 +9,6 @@ import io
 from contextlib import redirect_stdout
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.base import ClassifierMixin
@@ -24,6 +23,7 @@ from ml.config import (
 )
 from ml.evaluation.evaluator import EvaluationResult
 from ml.training.trainer import fit_fold_pipeline
+from ml.utils.plotting import get_pyplot
 
 
 class TrainingDiagnostics:
@@ -113,6 +113,7 @@ class TrainingDiagnostics:
         valid_mean = valid_scores.mean(axis=1)
         valid_std = valid_scores.std(axis=1)
 
+        plt = get_pyplot()
         fig, ax = plt.subplots(figsize=(8, 5))
         ax.plot(train_sizes_abs, train_mean, "o-", color="steelblue", label="Treino")
         ax.plot(train_sizes_abs, valid_mean, "o-", color="darkorange", label="Validacao CV")
@@ -162,6 +163,7 @@ class TrainingDiagnostics:
         x = np.arange(len(names))
         width = 0.35
 
+        plt = get_pyplot()
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.bar(x - width / 2, train_vals, width, label="Treino", color="steelblue")
         ax.bar(x + width / 2, test_vals, width, label="Teste", color="darkorange")

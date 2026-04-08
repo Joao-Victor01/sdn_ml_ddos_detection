@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
 from ml.config import OUTPUTS_DIR, RANDOM_STATE, SHAP_SAMPLE_SIZE
+from ml.utils.plotting import get_pyplot
 
 
 class RandomForestExplainer:
@@ -136,6 +136,7 @@ class RandomForestExplainer:
     ) -> Path:
         top_df = importance_df.head(20).sort_values(metric_name, ascending=True)
 
+        plt = get_pyplot()
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.barh(top_df["feature"], top_df[metric_name], color="forestgreen")
         ax.set_xlabel("Importancia media")

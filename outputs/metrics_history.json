@@ -710,5 +710,287 @@
       "model_name": "rf"
     },
     "notes": "Treino vs teste — F1 macro gap: +0.0164"
+  },
+  {
+    "run_id": "rf_rf_import_fix_smoke",
+    "timestamp": "2026-04-08T10:38:54.337799",
+    "label": "RandomForest Baseline (Teste)",
+    "class_names": [
+      "Normal",
+      "Flooding",
+      "Intrusao"
+    ],
+    "metrics": {
+      "accuracy": 0.958333,
+      "balanced_accuracy": 0.949587,
+      "precision_macro": 0.947624,
+      "recall_macro": 0.949587,
+      "f1_macro": 0.948583,
+      "f1_weighted": 0.958318,
+      "mcc": 0.932543,
+      "gm": 0.964144,
+      "roc_auc_ovr_macro": 0.994973
+    },
+    "confusion_matrix": [
+      [
+        43,
+        3,
+        2
+      ],
+      [
+        4,
+        118,
+        0
+      ],
+      [
+        1,
+        0,
+        69
+      ]
+    ],
+    "params": {
+      "n_estimators": 200,
+      "max_depth": 16,
+      "min_samples_split": 4,
+      "min_samples_leaf": 2,
+      "max_features": "sqrt",
+      "tuned": false
+    },
+    "dataset_info": {
+      "n_total": 800,
+      "n_train": 560,
+      "n_test": 240,
+      "n_features_before_selection": 26,
+      "n_features_after_selection": 26,
+      "selected_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "SYN Flag Cnt",
+        "ACK Flag Cnt",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "binary_features_passthrough": [
+        "SYN Flag Cnt",
+        "ACK Flag Cnt"
+      ],
+      "scaled_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "run_output_dir": "/home/jv/sdn_ml_ddos_detection/outputs/runs/rf_import_fix_smoke",
+      "class_distribution_total": {
+        "Normal": 159,
+        "Flooding": 408,
+        "Intrusao": 233
+      },
+      "cv_results": {
+        "accuracy": {
+          "mean": 0.958886780518659,
+          "std": 0.02252528070710984
+        },
+        "balanced_accuracy": {
+          "mean": 0.9567882608818282,
+          "std": 0.02009319645561741
+        },
+        "f1_macro": {
+          "mean": 0.954727020667935,
+          "std": 0.022652587790528336
+        },
+        "precision_macro": {
+          "mean": 0.9530975539064682,
+          "std": 0.024899121395243088
+        },
+        "recall_macro": {
+          "mean": 0.9567882608818282,
+          "std": 0.02009319645561741
+        }
+      },
+      "model_name": "rf"
+    },
+    "notes": "Treino vs teste — F1 macro gap: +0.0464"
+  },
+  {
+    "run_id": "rf_rf_rapido",
+    "timestamp": "2026-04-08T10:43:46.252019",
+    "label": "RandomForest Baseline (Teste)",
+    "class_names": [
+      "Normal",
+      "Flooding",
+      "Intrusao"
+    ],
+    "metrics": {
+      "accuracy": 0.984444,
+      "balanced_accuracy": 0.981395,
+      "precision_macro": 0.979924,
+      "recall_macro": 0.981395,
+      "f1_macro": 0.980653,
+      "f1_weighted": 0.984465,
+      "mcc": 0.974744,
+      "gm": 0.986856,
+      "roc_auc_ovr_macro": 0.999509
+    },
+    "confusion_matrix": [
+      [
+        694,
+        9,
+        13
+      ],
+      [
+        16,
+        1820,
+        2
+      ],
+      [
+        12,
+        4,
+        1030
+      ]
+    ],
+    "params": {
+      "n_estimators": 200,
+      "max_depth": 16,
+      "min_samples_split": 4,
+      "min_samples_leaf": 2,
+      "max_features": "sqrt",
+      "tuned": false
+    },
+    "dataset_info": {
+      "n_total": 12000,
+      "n_train": 8400,
+      "n_test": 3600,
+      "n_features_before_selection": 26,
+      "n_features_after_selection": 26,
+      "selected_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "SYN Flag Cnt",
+        "ACK Flag Cnt",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "binary_features_passthrough": [
+        "SYN Flag Cnt",
+        "ACK Flag Cnt"
+      ],
+      "scaled_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "run_output_dir": "/home/jv/sdn_ml_ddos_detection/outputs/runs/rf_rapido",
+      "class_distribution_total": {
+        "Normal": 2388,
+        "Flooding": 6126,
+        "Intrusao": 3486
+      },
+      "cv_results": {
+        "accuracy": {
+          "mean": 0.9835714285714285,
+          "std": 0.0018210783977117271
+        },
+        "balanced_accuracy": {
+          "mean": 0.981738864907181,
+          "std": 0.0009456795169605623
+        },
+        "f1_macro": {
+          "mean": 0.9796164075532268,
+          "std": 0.0020234256116438377
+        },
+        "precision_macro": {
+          "mean": 0.9776712724514892,
+          "std": 0.0033025601702622543
+        },
+        "recall_macro": {
+          "mean": 0.981738864907181,
+          "std": 0.0009456795169605623
+        }
+      },
+      "model_name": "rf"
+    },
+    "notes": "Treino vs teste — F1 macro gap: +0.0128"
   }
 ]

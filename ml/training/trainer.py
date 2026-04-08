@@ -12,7 +12,6 @@ import time
 from contextlib import redirect_stdout
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.base import ClassifierMixin, clone
@@ -30,6 +29,7 @@ from ml.features.selector import FeatureSelector
 from ml.preprocessing.balancer import ClassBalancer
 from ml.preprocessing.cleaner import DataCleaner
 from ml.preprocessing.scaler import FeatureScaler
+from ml.utils.plotting import get_pyplot
 
 
 def fit_fold_pipeline(
@@ -237,6 +237,7 @@ class ModelTrainer:
             return
 
         try:
+            plt = get_pyplot()
             fig, ax = plt.subplots(figsize=(10, 4))
             ax.plot(model.loss_curve_, label="Loss de treino", color="steelblue")
 

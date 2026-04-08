@@ -7,7 +7,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 from imblearn.metrics import geometric_mean_score
 from sklearn.base import ClassifierMixin
@@ -25,6 +24,7 @@ from sklearn.metrics import (
 )
 
 from ml.config import OUTPUTS_DIR, TARGET_NAMES
+from ml.utils.plotting import get_pyplot
 
 
 @dataclass
@@ -196,6 +196,7 @@ class ModelEvaluator:
         slug: str,
     ) -> None:
         try:
+            plt = get_pyplot()
             fig, ax = plt.subplots(figsize=(7, 6))
             ConfusionMatrixDisplay(
                 confusion_matrix=cm,
