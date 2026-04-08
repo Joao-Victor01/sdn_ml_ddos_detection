@@ -12,9 +12,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.base import ClassifierMixin
 from sklearn.metrics import f1_score
 from sklearn.model_selection import StratifiedKFold, train_test_split
-from sklearn.neural_network import MLPClassifier
 
 from ml.config import (
     CV_N_SPLITS,
@@ -39,8 +39,12 @@ class TrainingDiagnostics:
         y: pd.Series,
         label: str,
         scoring: str = "f1_macro",
-        estimator: MLPClassifier | None = None,
+        estimator: ClassifierMixin | None = None,
     ) -> Path:
+        if estimator is None:
+            raise ValueError(
+                "TrainingDiagnostics: informe um estimador baseline para a curva de aprendizado."
+            )
         if scoring != "f1_macro":
             raise ValueError(
                 "TrainingDiagnostics: atualmente a curva de aprendizado suporta apenas "

@@ -279,5 +279,436 @@
       }
     },
     "notes": "Treino vs teste — F1 macro gap: -0.0013"
+  },
+  {
+    "run_id": "mlp_smoke_mlp_generic",
+    "timestamp": "2026-04-08T10:26:10.715961",
+    "label": "MLP Baseline (Teste)",
+    "class_names": [
+      "Normal",
+      "Flooding",
+      "Intrusao"
+    ],
+    "metrics": {
+      "accuracy": 0.962222,
+      "balanced_accuracy": 0.949011,
+      "precision_macro": 0.961426,
+      "recall_macro": 0.949011,
+      "f1_macro": 0.95406,
+      "f1_weighted": 0.961809,
+      "mcc": 0.938889,
+      "gm": 0.964213,
+      "roc_auc_ovr_macro": 0.985459
+    },
+    "confusion_matrix": [
+      [
+        78,
+        5,
+        6
+      ],
+      [
+        2,
+        225,
+        3
+      ],
+      [
+        0,
+        1,
+        130
+      ]
+    ],
+    "params": {
+      "hidden_layer_sizes": [
+        128,
+        64
+      ],
+      "activation": "relu",
+      "solver": "adam",
+      "alpha": 0.001,
+      "learning_rate": "adaptive",
+      "max_iter": 250,
+      "tuned": false
+    },
+    "dataset_info": {
+      "n_total": 1500,
+      "n_train": 1050,
+      "n_test": 450,
+      "n_features_before_selection": 26,
+      "n_features_after_selection": 26,
+      "selected_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "SYN Flag Cnt",
+        "ACK Flag Cnt",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "binary_features_passthrough": [
+        "SYN Flag Cnt",
+        "ACK Flag Cnt"
+      ],
+      "scaled_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "run_output_dir": "/home/jv/sdn_ml_ddos_detection/outputs/runs/smoke_mlp_generic",
+      "class_distribution_total": {
+        "Normal": 298,
+        "Flooding": 766,
+        "Intrusao": 436
+      },
+      "cv_results": {
+        "accuracy": {
+          "mean": 0.920952380952381,
+          "std": 0.041491468401508504
+        },
+        "balanced_accuracy": {
+          "mean": 0.9173711508921881,
+          "std": 0.023479173973186968
+        },
+        "f1_macro": {
+          "mean": 0.9097929977860609,
+          "std": 0.04079729029922787
+        },
+        "precision_macro": {
+          "mean": 0.9102554488467481,
+          "std": 0.048851223147545635
+        },
+        "recall_macro": {
+          "mean": 0.9173711508921881,
+          "std": 0.023479173973186968
+        }
+      },
+      "model_name": "mlp"
+    },
+    "notes": "Treino vs teste — F1 macro gap: -0.0028"
+  },
+  {
+    "run_id": "mlp_smoke_both_generic",
+    "timestamp": "2026-04-08T10:26:47.515584",
+    "label": "MLP Baseline (Teste)",
+    "class_names": [
+      "Normal",
+      "Flooding",
+      "Intrusao"
+    ],
+    "metrics": {
+      "accuracy": 0.966667,
+      "balanced_accuracy": 0.964777,
+      "precision_macro": 0.959118,
+      "recall_macro": 0.964777,
+      "f1_macro": 0.96173,
+      "f1_weighted": 0.966834,
+      "mcc": 0.946408,
+      "gm": 0.974428,
+      "roc_auc_ovr_macro": 0.992754
+    },
+    "confusion_matrix": [
+      [
+        57,
+        0,
+        3
+      ],
+      [
+        2,
+        148,
+        3
+      ],
+      [
+        1,
+        1,
+        85
+      ]
+    ],
+    "params": {
+      "hidden_layer_sizes": [
+        128,
+        64
+      ],
+      "activation": "relu",
+      "solver": "adam",
+      "alpha": 0.001,
+      "learning_rate": "adaptive",
+      "max_iter": 250,
+      "tuned": false
+    },
+    "dataset_info": {
+      "n_total": 1000,
+      "n_train": 700,
+      "n_test": 300,
+      "n_features_before_selection": 26,
+      "n_features_after_selection": 26,
+      "selected_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "SYN Flag Cnt",
+        "ACK Flag Cnt",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "binary_features_passthrough": [
+        "SYN Flag Cnt",
+        "ACK Flag Cnt"
+      ],
+      "scaled_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "run_output_dir": "/home/jv/sdn_ml_ddos_detection/outputs/runs/smoke_both_generic",
+      "class_distribution_total": {
+        "Normal": 199,
+        "Flooding": 510,
+        "Intrusao": 291
+      },
+      "cv_results": {
+        "accuracy": {
+          "mean": 0.8928567061614272,
+          "std": 0.007011886782189301
+        },
+        "balanced_accuracy": {
+          "mean": 0.9046122611856954,
+          "std": 0.00789496160851808
+        },
+        "f1_macro": {
+          "mean": 0.8841770059318318,
+          "std": 0.003208543356209164
+        },
+        "precision_macro": {
+          "mean": 0.8745948833062535,
+          "std": 0.006705217346929502
+        },
+        "recall_macro": {
+          "mean": 0.9046122611856954,
+          "std": 0.00789496160851808
+        }
+      },
+      "model_name": "mlp"
+    },
+    "notes": "Treino vs teste — F1 macro gap: -0.0274"
+  },
+  {
+    "run_id": "rf_smoke_both_generic",
+    "timestamp": "2026-04-08T10:27:10.929595",
+    "label": "RandomForest Baseline (Teste)",
+    "class_names": [
+      "Normal",
+      "Flooding",
+      "Intrusao"
+    ],
+    "metrics": {
+      "accuracy": 0.973333,
+      "balanced_accuracy": 0.975888,
+      "precision_macro": 0.965638,
+      "recall_macro": 0.975888,
+      "f1_macro": 0.97039,
+      "f1_weighted": 0.973512,
+      "mcc": 0.95717,
+      "gm": 0.981406,
+      "roc_auc_ovr_macro": 0.998325
+    },
+    "confusion_matrix": [
+      [
+        59,
+        1,
+        0
+      ],
+      [
+        4,
+        148,
+        1
+      ],
+      [
+        1,
+        1,
+        85
+      ]
+    ],
+    "params": {
+      "n_estimators": 200,
+      "max_depth": 16,
+      "min_samples_split": 4,
+      "min_samples_leaf": 2,
+      "max_features": "sqrt",
+      "tuned": false
+    },
+    "dataset_info": {
+      "n_total": 1000,
+      "n_train": 700,
+      "n_test": 300,
+      "n_features_before_selection": 26,
+      "n_features_after_selection": 26,
+      "selected_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "SYN Flag Cnt",
+        "ACK Flag Cnt",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "binary_features_passthrough": [
+        "SYN Flag Cnt",
+        "ACK Flag Cnt"
+      ],
+      "scaled_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "run_output_dir": "/home/jv/sdn_ml_ddos_detection/outputs/runs/smoke_both_generic",
+      "class_distribution_total": {
+        "Normal": 199,
+        "Flooding": 510,
+        "Intrusao": 291
+      },
+      "cv_results": {
+        "accuracy": {
+          "mean": 0.9557059535600309,
+          "std": 0.005411934326372563
+        },
+        "balanced_accuracy": {
+          "mean": 0.9522712569455781,
+          "std": 0.006192733867923503
+        },
+        "f1_macro": {
+          "mean": 0.9476218850283223,
+          "std": 0.008273106463493163
+        },
+        "precision_macro": {
+          "mean": 0.9438162368675815,
+          "std": 0.009952375607966217
+        },
+        "recall_macro": {
+          "mean": 0.9522712569455781,
+          "std": 0.006192733867923503
+        }
+      },
+      "model_name": "rf"
+    },
+    "notes": "Treino vs teste — F1 macro gap: +0.0164"
   }
 ]

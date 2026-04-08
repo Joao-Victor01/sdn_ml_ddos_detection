@@ -2,9 +2,9 @@
 
 ## Visao Geral
 
-O diretorio `ml/` implementa um pipeline completo de aprendizado de maquina para classificacao multiclasse de trafego em ambiente SDN usando o dataset `InSDN_DatasetCSV`.
+O diretorio `ml/` implementa um pipeline completo de classificacao multiclasse para trafego SDN com base no dataset `InSDN_DatasetCSV`.
 
-O problema modelado hoje e:
+O problema modelado e:
 
 - `Normal`
 - `Flooding`
@@ -21,41 +21,42 @@ Mapeamento dos labels originais:
 - `BOTNET -> Intrusao`
 - `U2R -> Intrusao`
 
-O modelo principal e um `MLPClassifier` da `scikit-learn`.
+O pipeline hoje suporta dois modelos supervisionados:
 
-O pipeline foi implementado respeitando as boas praticas descritas em `docs/guia_boas_praticas_ml.md`, especialmente:
+- `MLPClassifier`
+- `RandomForestClassifier`
 
-- `split` treino/teste antes de qualquer transformacao que aprenda dos dados;
-- `fit` de imputacao, escalonamento e selecao apenas no treino;
+A implementacao segue a ordem metodologica de [guia_boas_praticas_ml.md](/home/jv/sdn_ml_ddos_detection/docs/guia_boas_praticas_ml.md):
+
+- `split` treino/teste antes de qualquer transformacao aprendida;
+- `fit` de limpeza, imputacao, selecao e escala apenas no treino;
 - `SMOTE` apenas no treino;
-- validacao cruzada e curva de aprendizado com preprocessamento refeito dentro de cada dobra;
-- preservacao de features binarias sem padronizacao;
-- avaliacao final no teste sem realimentacao para o treinamento.
+- validacao cruzada e learning curve com preprocessamento refeito em cada dobra;
+- avaliacao separada em treino e teste para diagnostico de generalizacao;
+- persistencia do modelo e dos transformadores fitados.
 
 ---
 
 ## Objetivo do Pacote `ml`
 
-O modulo `ml` tem quatro responsabilidades principais:
+O modulo tem quatro responsabilidades principais:
 
-1. Carregar e consolidar o dataset bruto.
-2. Preparar os dados para treinamento de maneira metodologicamente correta.
-3. Treinar, validar e avaliar o modelo.
-4. Salvar o pipeline treinado e disponibilizar inferencia posterior.
+1. carregar e consolidar o dataset bruto;
+2. preparar os dados com um pipeline metodologicamente correto;
+3. treinar, validar e avaliar um ou mais modelos;
+4. salvar artefatos reutilizaveis para inferencia posterior.
 
-Em outras palavras, ele transforma arquivos CSV do InSDN em:
+Na pratica, ele transforma os CSVs do InSDN em:
 
-- um classificador treinado;
-- artefatos de preprocessamento reutilizaveis;
-- metricas;
-- graficos de interpretacao e diagnostico;
-- um mecanismo de inferencia em novos fluxos.
+- modelos treinados;
+- transformadores de preprocessamento fitados;
+- metricas e historico de experimentos;
+- graficos de diagnostico;
+- mecanismo de inferencia em novos fluxos.
 
 ---
 
-## Estrutura de Diretorios
-
-Arquivos relevantes do pacote:
+## Estrutura do Pacote
 
 ```text
 ml/
@@ -68,9 +69,12 @@ ml/
 │   ├── scaler.py
 │   └── balancer.py
 ├── features/
-│   └── selector.py
+│   ├── selector.py
+│   └── rf_explainer.py
 ├── models/
-│   └── mlp_model.py
+│   ├── mlp_model.py
+│   ├── rf_model.py
+│   └── registry.py
 ├── training/
 │   ├── trainer.py
 │   └── tuner.py
@@ -90,36 +94,38 @@ ml/
 
 ## Diagramas
 
-## 1. Arquitetura Geral do Pacote
+## 1. Arquitetura Geral
 
 ```mermaid
 graph TD
     A[config.py<br/>Configuracoes globais] --> B[pipeline.py<br/>Orquestrador]
-    B --> C[data/loader.py<br/>Carga e consolidacao do InSDN]
-    B --> D[preprocessing/cleaner.py<br/>Limpeza e imputacao]
-    B --> E[features/selector.py<br/>VarianceThreshold + SHAP]
-    B --> F[preprocessing/scaler.py<br/>StandardScaler]
+    B --> C[data/loader.py<br/>Carga do InSDN]
+    B --> D[preprocessing/cleaner.py<br/>Limpeza + imputacao]
+    B --> E[features/selector.py<br/>VarianceThreshold]
+    B --> F[preprocessing/scaler.py<br/>StandardScaler seletivo]
     B --> G[preprocessing/balancer.py<br/>SMOTE]
-    B --> H[models/mlp_model.py<br/>Definicao do MLP]
-    B --> I[training/trainer.py<br/>Treino + CV]
-    B --> J[training/tuner.py<br/>RandomizedSearchCV]
-    B --> K[evaluation/evaluator.py<br/>Metricas + Confusion Matrix]
-    B --> L[utils/training_diagnostics.py<br/>Learning curve + gap]
-    B --> M[persistence/model_io.py<br/>Salvar artefatos]
-    B --> N[utils/metrics_logger.py<br/>Historico JSON/CSV]
-    O[inference/predictor.py<br/>Inferencia] --> M
-    O --> A
+    B --> H[models/registry.py<br/>Registro de modelos]
+    H --> I[models/mlp_model.py<br/>Baseline MLP]
+    H --> J[models/rf_model.py<br/>Baseline RF]
+    B --> K[training/trainer.py<br/>Treino + CV]
+    B --> L[training/tuner.py<br/>RandomizedSearchCV]
+    B --> M[evaluation/evaluator.py<br/>Metricas + CM]
+    B --> N[utils/training_diagnostics.py<br/>Learning curve + gap]
+    B --> O[features/rf_explainer.py<br/>Importance + SHAP do RF]
+    B --> P[persistence/model_io.py<br/>Salvar artefatos]
+    B --> Q[utils/metrics_logger.py<br/>Historico JSON/CSV]
+    R[inference/predictor.py<br/>Inferencia] --> P
 ```
 
-## 2. Fluxo de Treinamento do Pipeline
+## 2. Fluxo de Treinamento
 
 ```mermaid
 graph TD
-    A[CSVs em dataset/InSDN_DatasetCSV] --> B[InSDNLoader]
+    A[CSVs InSDN] --> B[InSDNLoader]
     B --> C[Concatenar arquivos]
     C --> D[Normalizar Label]
-    D --> E[Mapear classes<br/>Normal / Flooding / Intrusao]
-    E --> F[Selecionar 26 features relevantes]
+    D --> E[Mapear para 3 classes]
+    E --> F[Selecionar 26 features de dominio]
     F --> G[train_test_split estratificado]
 
     G --> H[Treino bruto]
@@ -135,162 +141,111 @@ graph TD
     M --> O[FeatureScaler.transform]
 
     N --> P[SMOTE apenas no treino]
-    P --> Q[MLP Baseline]
+    P --> Q[Loop por modelo]
 
-    Q --> R[Validacao cruzada limpa]
-    Q --> S[Avaliacao em treino]
-    Q --> T[Avaliacao em teste]
+    Q --> R[Baseline]
+    Q --> S[CV limpa]
+    Q --> T[Avaliacao treino]
+    Q --> U[Avaliacao teste]
+    Q --> V[Tuning opcional]
+    Q --> W[Persistencia por modelo]
+    Q --> X[MetricsLogger]
 
-    S --> U[TrainingDiagnostics]
-    T --> U
-    R --> V[MetricsLogger]
-    U --> V
-    T --> V
-
-    Q --> W[ModelIO.save]
-    L --> W
-    J --> W
-    N --> W
+    Q --> Y[RF Explainer somente se modelo = RF]
 ```
 
 ## 3. Fluxo de Inferencia
 
 ```mermaid
 graph TD
-    A[Novos fluxos brutos] --> B[DDoSPredictor.load]
-    B --> C[ModelIO.load]
-    C --> D[Artefatos carregados<br/>modelo + imputer + variance_filter + scaler + selected_features]
-    D --> E[Preprocessamento]
-    E --> F[Imputacao]
-    F --> G[VarianceThreshold.transform]
-    G --> H[Selecionar mesmas features do treino]
-    H --> I[Scaler.transform]
-    I --> J[MLP.predict / predict_proba]
-    J --> K[Classe final<br/>Normal / Flooding / Intrusao]
+    A[Novos fluxos] --> B[DDoSPredictor]
+    B --> C[ModelIO.load(model_name)]
+    C --> D[Artefatos comuns + modelo escolhido]
+    D --> E[Imputacao]
+    E --> F[VarianceThreshold.transform]
+    F --> G[Selecionar mesmas features]
+    G --> H[Scaler.transform]
+    H --> I[Model.predict / predict_proba]
+    I --> J[Normal / Flooding / Intrusao]
 ```
 
-## 4. Arquitetura do MLP
+## 4. Arquitetura dos Modelos
 
 ```mermaid
 graph TD
-    A[Entrada<br/>26 features] --> B[Camada oculta 1<br/>128 neuronios<br/>ReLU]
-    B --> C[Camada oculta 2<br/>64 neuronios<br/>ReLU]
-    C --> D[Saida<br/>3 neuronios]
-    D --> E[Probabilidades por classe<br/>Normal / Flooding / Intrusao]
+    A[26 features] --> B1[MLP<br/>128 -> 64<br/>ReLU]
+    A --> B2[RandomForest<br/>200 arvores<br/>max_depth 16]
+    B1 --> C[Saida multiclasse]
+    B2 --> C
+    C --> D[3 classes]
 ```
 
 ---
 
-## Arquitetura Geral
+## Principios de Projeto
 
-O pipeline segue uma arquitetura em camadas:
+A refatoracao atual segue uma linha proxima de `SOLID`:
 
-1. `config.py`
-   Centraliza configuracoes, caminhos, mapeamentos de classes, features selecionadas por dominio e hiperparametros.
+- `SRP`
+  Cada modulo tem uma responsabilidade clara.
+  `cleaner.py` limpa, `trainer.py` treina, `evaluator.py` avalia, `model_io.py` persiste.
 
-2. `data/loader.py`
-   Le os CSVs, concatena o dataset, normaliza os labels e entrega `X` e `y`.
+- `OCP`
+  O pipeline foi aberto para extensao via [registry.py](/home/jv/sdn_ml_ddos_detection/ml/models/registry.py).
+  Para adicionar um novo modelo, o caminho principal e registrar um novo `ModelSpec`.
 
-3. `preprocessing/`
-   Limpa os dados, trata ruido numerico, imputacao, escalonamento e balanceamento.
+- `LSP`
+  O treinamento, a avaliacao e os diagnosticos operam sobre estimadores compatíveis com a API do `scikit-learn`, sem depender de uma classe concreta.
 
-4. `features/selector.py`
-   Faz filtragem por variancia e calcula importancia por SHAP ou fallback com RandomForest.
+- `ISP`
+  As capacidades especificas foram separadas.
+  Exemplo: explicabilidade ficou em [rf_explainer.py](/home/jv/sdn_ml_ddos_detection/ml/features/rf_explainer.py), nao no seletor geral.
 
-5. `models/mlp_model.py`
-   Define a arquitetura do MLP baseline.
-
-6. `training/`
-   Faz treinamento, validacao cruzada e tuning opcional.
-
-7. `evaluation/evaluator.py`
-   Calcula metricas multiclasse e gera matriz de confusao.
-
-8. `persistence/model_io.py`
-   Salva e carrega o modelo e os transformadores.
-
-9. `inference/predictor.py`
-   Reaplica o pipeline salvo em dados novos.
-
-10. `utils/`
-    Registra historico de metricas, plota dashboards e gera diagnosticos de overfitting.
+- `DIP`
+  O pipeline depende de abstracoes simples como `ModelSpec` e da interface comum dos estimadores sklearn, nao de detalhes internos de um unico modelo.
 
 ---
 
-## Fluxo de Execucao do Pipeline
-
-O arquivo principal e `ml/pipeline.py`.
-
-A funcao `run_pipeline()` coordena todas as etapas:
-
-1. Inicializacao e reproducibilidade.
-2. Carregamento do dataset consolidado.
-3. EDA opcional.
-4. `train_test_split` estratificado.
-5. Limpeza do treino.
-6. Aplicacao da mesma limpeza ao teste.
-7. Selecao de features.
-8. Escalonamento.
-9. Balanceamento com `SMOTE`.
-10. Treinamento do MLP baseline.
-11. Validacao cruzada no treino.
-12. Avaliacao em treino e teste.
-13. Diagnosticos de generalizacao.
-14. Tuning opcional.
-15. Persistencia dos artefatos.
-16. Registro de metricas e outputs.
-
-Essa ordem nao e acidental: ela existe para evitar `data leakage`.
-
----
-
-## Configuracoes Centrais
+## Configuracao Central
 
 Arquivo: [config.py](/home/jv/sdn_ml_ddos_detection/ml/config.py)
 
-As configuracoes mais importantes sao:
+Principais grupos de configuracao:
 
-- `DATASET_DIR`
-  Diretorio com os CSVs do InSDN.
+- dataset e caminhos:
+  - `DATASET_DIR`
+  - `MODELS_DIR`
+  - `OUTPUTS_DIR`
+  - `OUTPUTS_RUNS_DIR`
 
-- `CLASS_GROUP_MAPPING`
-  Dicionario que converte labels originais para o cenario `Normal/Flooding/Intrusao`.
+- definicao do problema:
+  - `CLASS_GROUP_MAPPING`
+  - `TARGET_NAMES`
+  - `TARGET_ENCODING`
+  - `TARGET_DECODING`
 
-- `TARGET_NAMES`
-  Ordem oficial das classes:
-  `["Normal", "Flooding", "Intrusao"]`
+- atributos de entrada:
+  - `RELEVANT_FEATURES`
+  - `BINARY_PASSTHROUGH_FEATURES`
+  - `NON_NEGATIVE_FEATURES`
 
-- `TARGET_ENCODING` e `TARGET_DECODING`
-  Mapeamento entre labels textuais e codigos inteiros.
+- preprocessamento:
+  - `TEST_SIZE`
+  - `VARIANCE_THRESHOLD`
+  - `IMPUTER_STRATEGY`
+  - `SMOTE_K_NEIGHBORS`
 
-- `RELEVANT_FEATURES`
-  Lista fixa das 26 features usadas no treinamento.
+- modelos:
+  - `MLP_*`
+  - `RF_*`
 
-- `NON_NEGATIVE_FEATURES`
-  Lista de features que, por definicao, nao deveriam assumir valores negativos.
+- tuning:
+  - `MLP_TUNING_PARAM_DISTRIBUTIONS`
+  - `RF_TUNING_PARAM_DISTRIBUTIONS`
 
-- `TEST_SIZE`
-  Fracao reservada ao conjunto de teste.
-
-- `MLP_*`
-  Hiperparametros do modelo baseline.
-
-- `CV_N_SPLITS`
-  Numero de dobras na validacao cruzada.
-
-- `TUNING_PARAM_DISTRIBUTIONS`
-  Espaco de busca do `RandomizedSearchCV`.
-
-### Decisao de projeto importante
-
-As features nao sao escolhidas automaticamente a partir de todas as 84 colunas do dataset. O projeto usa uma lista curada em `RELEVANT_FEATURES` para evitar que o modelo aprenda atalhos indevidos, como:
-
-- IP de origem/destino;
-- portas especificas do ambiente;
-- `Flow ID`;
-- `Timestamp`.
-
-Isso reduz risco de memorizacao do cenario e melhora a capacidade de generalizacao.
+Decisao importante:
+o projeto nao usa todas as colunas do dataset.
+Ele parte de uma lista curada de `26` atributos estatisticos de fluxo para evitar memorizacao de identificadores de ambiente como IP, porta, `Flow ID` e `Timestamp`.
 
 ---
 
@@ -298,335 +253,199 @@ Isso reduz risco de memorizacao do cenario e melhora a capacidade de generalizac
 
 Arquivo: [loader.py](/home/jv/sdn_ml_ddos_detection/ml/data/loader.py)
 
-### O que faz
+### Responsabilidade
 
 O `InSDNLoader`:
 
-- verifica se o diretorio do dataset existe;
-- lista todos os CSVs;
-- le cada arquivo com `pandas`;
-- concatena os `DataFrame`s;
-- normaliza `Label` com `str.strip()`;
-- aplica o agrupamento de classes;
-- seleciona as 26 features relevantes;
-- devolve:
-  - `X` como `DataFrame`;
-  - `y` como `Series` codificada em inteiros.
+- localiza os CSVs do InSDN;
+- le e concatena os arquivos;
+- normaliza os labels com `str.strip()`;
+- aplica a engenharia de label para `Normal/Flooding/Intrusao`;
+- filtra apenas as features de dominio;
+- gera `X` e `y`.
 
-### O que entra
+### Entrada
 
 - diretorio `dataset/InSDN_DatasetCSV`
 
-### O que sai
+### Saida
 
-- `X`: matriz de atributos
-- `y`: vetor alvo
+- `X`: `DataFrame` com as 26 features escolhidas mais `__row_hash__`
+- `y`: `Series` com codigos inteiros das 3 classes
 
-### Detalhe tecnico importante
+### Observacao sobre `__row_hash__`
 
-O loader cria uma coluna auxiliar `__row_hash__` para representar de forma estavel cada linha original. Isso e usado no `DataCleaner` para que a remocao de duplicatas seja feita sobre a linha real do dataset, e nao apenas sobre as features selecionadas.
-
-Sem isso, dois fluxos diferentes com a mesma assinatura estatistica poderiam ser removidos indevidamente.
-
-### EDA textual
-
-O metodo `describe()` produz:
-
-- shape;
-- memoria;
-- tipos de dados;
-- distribuicao do alvo;
-- valores ausentes;
-- duplicatas;
-- estatisticas descritivas.
+Esse campo e usado internamente para detectar duplicatas reais na limpeza.
+Ele nao entra no treinamento final, pois e removido pelo `DataCleaner`.
 
 ---
 
-## Camada de Preprocessamento
+## Preprocessamento
 
 ## 1. Limpeza
 
 Arquivo: [cleaner.py](/home/jv/sdn_ml_ddos_detection/ml/preprocessing/cleaner.py)
 
-### Responsabilidades
+### O que faz
 
-- remover duplicatas reais;
-- substituir `Inf` e `-Inf` por `NaN`;
-- converter valores negativos fisicamente invalidos em `NaN`;
-- imputar `NaN` com `SimpleImputer(strategy="median")`.
+- troca `inf/-inf` por `NaN`;
+- converte valores negativos impossiveis em `NaN` para features nao negativas;
+- remove duplicatas reais no treino;
+- ajusta `SimpleImputer` com mediana apenas no treino;
+- aplica a mesma imputacao ao teste.
 
-### Como funciona
+### Objetivo
 
-#### `fit_transform(X, y)`
+Garantir consistencia numerica e evitar leakage.
 
-- usado apenas no treino;
-- remove duplicatas;
-- sanitiza ruido numerico;
-- ajusta o imputador;
-- retorna `X_clean` e `y_clean`.
-
-#### `transform(X, y=None)`
-
-- usado no teste ou inferencia;
-- reaplica as mesmas regras de limpeza;
-- usa apenas `transform()` no imputador ja ajustado.
-
-### Por que mediana?
-
-A mediana e robusta a outliers, o que e desejavel em dados de rede, onde taxas e duracoes podem ter distribuicoes muito assimetricas.
-
-### Regra metodologica
-
-O imputador nunca aprende nada do teste. Ele so e ajustado no treino.
-
----
-
-## 2. Escalonamento
-
-Arquivo: [scaler.py](/home/jv/sdn_ml_ddos_detection/ml/preprocessing/scaler.py)
-
-### Responsabilidade
-
-Aplicar `StandardScaler` apenas nas colunas continuas.
-
-### Como funciona
-
-- `fit_transform(X_train)`
-  detecta colunas binarias `0/1`, ajusta o `scaler` apenas nas colunas continuas e transforma o treino;
-
-- `transform(X_test)`
-  reaplica exatamente a mesma separacao entre colunas continuas e binarias no teste.
-
-### Colunas binarias preservadas
-
-No estado atual do projeto, as colunas conhecidas como binarias que permanecem sem escala sao:
-
-- `SYN Flag Cnt`
-- `ACK Flag Cnt`
-
-O scaler tambem detecta outras colunas observadas como estritamente binarias no treino, caso existam.
-
-### Por que isso importa?
-
-O `MLPClassifier` e sensivel a escala dos atributos. Se uma feature tem amplitude muito maior que outra, ela pode dominar os gradientes e prejudicar a convergencia.
-
-O `StandardScaler` coloca os dados aproximadamente em:
-
-- media `0`
-- desvio padrao `1`
-
-Isso vale para as colunas continuas. As binarias sao preservadas em `0/1`, o que evita distorcer o significado semantico desses atributos.
-
----
-
-## 3. Balanceamento
-
-Arquivo: [balancer.py](/home/jv/sdn_ml_ddos_detection/ml/preprocessing/balancer.py)
-
-### Responsabilidade
-
-Balancear as classes com `SMOTE`.
-
-### Como funciona
-
-- recebe `X_train_scaled` e `y_train`;
-- imprime a distribuicao antes;
-- aplica `SMOTE`;
-- imprime a distribuicao depois.
-
-### Robustez adicional
-
-Em subamostras pequenas usadas por diagnosticos internos, o codigo ajusta `k_neighbors` dinamicamente para evitar falhas quando a classe minoritaria fica pequena demais para o `SMOTE` padrao.
-
-Se alguma classe tiver menos de 2 amostras na subamostra da dobra, o balanceamento e ignorado apenas naquele ajuste local.
-
-### Regra metodologica
-
-O `SMOTE` e aplicado **somente no treino**.
-
-Motivo:
-
-- ele gera amostras sinteticas;
-- o conjunto de teste deve representar o mundo real e nao dados artificiais.
-
----
-
-## Camada de Selecao de Features
+## 2. Selecao de features
 
 Arquivo: [selector.py](/home/jv/sdn_ml_ddos_detection/ml/features/selector.py)
 
-### Etapas implementadas
+### O que faz
 
-1. `VarianceThreshold`
-2. importancia por SHAP
+- aplica `VarianceThreshold`;
+- remove apenas features constantes.
 
-### Como funciona
+### O que nao faz mais
 
-#### Passo 1. VarianceThreshold
+- nao calcula SHAP;
+- nao seleciona features supervisionadas por importancia.
 
-Remove features com variancia menor ou igual ao limiar configurado.
+Isso foi separado para manter o fluxo geral independente do modelo.
 
-Na configuracao atual, o threshold e `0.0`, entao ele remove apenas colunas constantes.
+## 3. Escalonamento
 
-#### Passo 2. SHAP
+Arquivo: [scaler.py](/home/jv/sdn_ml_ddos_detection/ml/preprocessing/scaler.py)
 
-O seletor:
+### O que faz
 
-- treina um `RandomForestClassifier` auxiliar;
-- calcula `shap_values` sobre uma amostra do treino;
-- reduz o SHAP multiclasse para uma importancia media absoluta por feature;
-- produz um ranking ordenado.
+- identifica colunas binarias;
+- preserva `0/1` sem padronizacao;
+- aplica `StandardScaler` apenas nas colunas continuas;
+- faz `fit` so no treino.
 
-### Fallback
+### Motivo
 
-Se a biblioteca `shap` nao estiver disponivel, o codigo usa `feature_importances_` do `RandomForestClassifier`.
+O `MLP` e sensivel a escala.
+O `RF` nao precisa disso estritamente, mas usar o mesmo pipeline simplifica a arquitetura e mantem comparabilidade.
 
-### O que este modulo entrega
+## 4. Balanceamento
 
-- conjunto filtrado de features;
-- lista de features selecionadas;
-- ranking de importancia;
-- grafico salvo em `outputs/runs/<run_id>/feature_importance_multiclass.png`.
+Arquivo: [balancer.py](/home/jv/sdn_ml_ddos_detection/ml/preprocessing/balancer.py)
 
-### Decisao de projeto
+### O que faz
 
-Mesmo usando uma lista curada de 26 atributos, o SHAP foi mantido para:
+- aplica `SMOTE` somente no conjunto de treino.
 
-- interpretabilidade;
-- auditoria;
-- verificacao da intuicao de dominio.
+### Motivo
+
+Reduzir o impacto do desbalanceamento sem contaminar o conjunto de teste.
 
 ---
 
-## Definicao do Modelo
+## Modelos
+
+## 1. Registro de modelos
+
+Arquivo: [registry.py](/home/jv/sdn_ml_ddos_detection/ml/models/registry.py)
+
+### Papel
+
+Centraliza o que varia entre os modelos:
+
+- construtor baseline;
+- nome de exibicao;
+- nome do arquivo de persistencia;
+- hiperparametros rastreados;
+- espaco de tuning;
+- capacidades especificas como `loss_curve` e explicabilidade.
+
+### Modelos suportados
+
+- `mlp`
+- `rf`
+- `both` no CLI para executar os dois na mesma run
+
+## 2. MLP
 
 Arquivo: [mlp_model.py](/home/jv/sdn_ml_ddos_detection/ml/models/mlp_model.py)
 
-### Modelo baseline
-
-Funcao:
-
-- `build_baseline_mlp()`
-
-Configuracao principal:
+Baseline:
 
 - `hidden_layer_sizes=(128, 64)`
-- `activation="relu"`
-- `solver="adam"`
+- `activation='relu'`
+- `solver='adam'`
 - `alpha=0.001`
-- `max_iter=250`
+- `learning_rate='adaptive'`
 - `early_stopping=True`
-- `validation_fraction=0.1`
 
-### Modelo para tuning
+## 3. RandomForest
 
-Funcao:
+Arquivo: [rf_model.py](/home/jv/sdn_ml_ddos_detection/ml/models/rf_model.py)
 
-- `build_mlp_from_params(params)`
+Baseline:
 
-Permite reconstruir um MLP com hiperparametros fornecidos pelo tuning.
-
-### Observacao
-
-Como o problema tem tres classes, o `MLPClassifier` usa internamente uma saida multiclasse adequada, sem que isso precise ser programado manualmente.
+- `n_estimators=200`
+- `max_depth=16`
+- `min_samples_split=4`
+- `min_samples_leaf=2`
+- `max_features='sqrt'`
 
 ---
 
-## Camada de Treinamento
-
-## 1. Treino baseline
+## Treinamento
 
 Arquivo: [trainer.py](/home/jv/sdn_ml_ddos_detection/ml/training/trainer.py)
 
 ### Responsabilidades
 
-- treinar o baseline;
-- executar validacao cruzada limpa no treino;
-- gerar curva de loss.
+- treinar qualquer estimador compatível com sklearn;
+- executar validacao cruzada limpa;
+- opcionalmente salvar `loss_curve` quando o modelo a suporta.
 
-### `train()`
+### Funcao central de CV limpa
 
-Recebe:
+A funcao `fit_fold_pipeline()` recompõe, dentro de cada dobra:
 
-- `X_train_bal`
-- `y_train_bal`
+1. limpeza;
+2. selecao por variancia;
+3. escalonamento;
+4. SMOTE;
+5. treino do modelo.
 
-Executa:
+Isso garante que cada dobra seja um mini-experimento sem vazamento de dados.
 
-- `model.fit()`
-- registro de epocas executadas;
-- registro da `loss_`;
-- plot da curva de convergencia.
+### Observacao sobre loss curve
 
-### `cross_validate()`
-
-Executa validacao cruzada estratificada manual.
-
-Em cada dobra, o codigo refaz do zero:
-
-- limpeza;
-- imputacao;
-- `VarianceThreshold`;
-- escalonamento sem colunas binarias;
-- `SMOTE` apenas na parte de treino da dobra;
-- treinamento do MLP.
-
-Isso evita que a validacao cruzada use um treino ja preprocessado com informacao agregada do conjunto inteiro de treino.
-
-Metricas atuais:
-
-- `accuracy`
-- `balanced_accuracy`
-- `f1_macro`
-- `precision_macro`
-- `recall_macro`
-
-Essas metricas sao mais adequadas ao problema multiclasse e desbalanceado do que apenas acuracia.
+- `MLP`: suporta `loss_curve_`
+- `RF`: nao suporta esse artefato e, por decisao de projeto, nao tentamos simular algo equivalente
 
 ---
 
-## 2. Tuning
+## Tuning
 
 Arquivo: [tuner.py](/home/jv/sdn_ml_ddos_detection/ml/training/tuner.py)
 
-### Responsabilidade
+### O que faz
 
-Executar busca de hiperparametros com `RandomizedSearchCV`.
-
-### Como funciona
-
+- encapsula `RandomizedSearchCV`;
+- aceita qualquer estimador e qualquer `param_distributions`;
 - usa `StratifiedKFold`;
-- usa o scoring configurado em `CV_SCORING`;
-- testa combinacoes do espaco definido em `config.py`;
-- retorna `best_estimator_`.
+- usa a metrica principal definida em `CV_SCORING`.
 
-### Parametros ajustados
+### Observacao
 
-Atualmente a busca cobre, entre outros:
-
-- `hidden_layer_sizes`
-- `alpha`
-- `learning_rate_init`
-- `learning_rate`
-- `max_iter`
-
-### Regra metodologica
-
-O tuning usa apenas o treino balanceado.
-
-O teste continua reservado para avaliacao final.
+O tuning ficou generico.
+Quem define o espaco de busca e o `ModelSpec` do modelo selecionado.
 
 ---
 
-## Camada de Avaliacao
+## Avaliacao
 
 Arquivo: [evaluator.py](/home/jv/sdn_ml_ddos_detection/ml/evaluation/evaluator.py)
 
-### O que faz
-
-O `ModelEvaluator` calcula metricas multiclasse e gera a matriz de confusao.
-
-### Metricas implementadas
+### Metricas calculadas
 
 - `accuracy`
 - `balanced_accuracy`
@@ -635,515 +454,282 @@ O `ModelEvaluator` calcula metricas multiclasse e gera a matriz de confusao.
 - `f1_macro`
 - `f1_weighted`
 - `mcc`
-- `gm` (`geometric_mean_score`)
+- `gm`
 - `roc_auc_ovr_macro`
 
-### Por que essas metricas?
+### Artefatos
 
-#### Accuracy
+- `classification_report`
+- `confusion_matrix`
+- plot da matriz de confusao
 
-Mede acerto global.
+### Estrutura do resultado
 
-#### Balanced Accuracy
-
-Mede o desempenho medio por classe, compensando desbalanceamento.
-
-#### F1 Macro
-
-Trata todas as classes com o mesmo peso.
-
-#### F1 Weighted
-
-Leva em conta o tamanho das classes.
-
-#### MCC
-
-Mede qualidade global da classificacao de forma rigorosa.
-
-#### G-Mean
-
-Resume o equilibrio entre desempenhos de classes.
-
-#### ROC-AUC OVR Macro
-
-Avalia separabilidade multiclasse em esquema `one-vs-rest`.
-
-### Outputs
-
-- resumo textual;
-- `classification_report`;
-- matriz de confusao em `outputs/runs/<run_id>/confusion_matrix_*.png`.
+O retorno e um `EvaluationResult`, que padroniza o contrato entre avaliacao, logging e diagnosticos.
 
 ---
 
-## Diagnostico de Overfitting
+## Diagnostico de Generalizacao
 
 Arquivo: [training_diagnostics.py](/home/jv/sdn_ml_ddos_detection/ml/utils/training_diagnostics.py)
 
-### Ferramentas disponiveis
+### O que faz
 
-#### `plot_learning_curve()`
+- gera `learning_curve`;
+- gera `generalization_gap`;
+- salva relatorio JSON com o gap treino vs teste.
 
-Gera curva de aprendizado a partir de:
+### Como funciona
 
-- diferentes tamanhos de treino;
-- validacao cruzada estratificada;
-- metrica principal, atualmente `f1_macro`.
+A learning curve usa o mesmo principio da CV limpa:
+para cada tamanho de amostra e para cada dobra, o preprocessamento e reconstruido do zero.
 
-Assim como a validacao cruzada do `trainer.py`, cada ponto da curva refaz internamente o pipeline de preprocessamento dentro da dobra e dentro da subamostra de treino correspondente.
-
-Serve para verificar:
-
-- se o modelo melhora com mais dados;
-- se treino e validacao convergem;
-- se existe gap grande entre ambos.
-
-#### `plot_generalization_gap()`
-
-Compara treino e teste lado a lado para:
-
-- `Accuracy`
-- `Balanced Accuracy`
-- `F1 Macro`
-- `F1 Weighted`
-- `MCC`
-- `ROC-AUC`
-
-Serve para identificar sobreajuste.
-
-#### `save_gap_report()`
-
-Salva um JSON numerico com os gaps entre treino e teste.
-
-### Interpretacao tecnica
-
-Se os gaps forem pequenos, o modelo generaliza bem.
-
-Se treino estiver muito acima do teste, ha suspeita de overfitting.
+Isso faz com que o grafico reflita o comportamento real do pipeline e nao apenas do estimador isolado.
 
 ---
 
-## Persistencia dos Artefatos
+## Explicabilidade do RandomForest
+
+Arquivo: [rf_explainer.py](/home/jv/sdn_ml_ddos_detection/ml/features/rf_explainer.py)
+
+### Escopo
+
+Esse modulo existe apenas para o `RandomForest`.
+
+### O que gera
+
+- `feature importance` nativa do modelo;
+- ranking `SHAP`, quando a biblioteca `shap` estiver instalada.
+
+### Motivacao
+
+Como o RF ja existe no pipeline para explicabilidade e sua estrutura em arvores e naturalmente interpretavel, a explicabilidade foi isolada nele em vez de permanecer acoplada a toda a selecao de features.
+
+### Observacao importante
+
+Se `shap` nao estiver instalado:
+
+- o pipeline continua funcionando;
+- apenas o ranking SHAP e pulado;
+- a importance nativa do RF ainda e salva.
+
+---
+
+## Persistencia
 
 Arquivo: [model_io.py](/home/jv/sdn_ml_ddos_detection/ml/persistence/model_io.py)
 
-### O que e salvo
+### Artefatos comuns
 
-- `mlp_ddos_insdn.joblib`
 - `imputer.joblib`
 - `variance_filter.joblib`
 - `scaler.joblib`
 - `selected_features.joblib`
 
-Observacao:
+### Artefatos por modelo
 
-- `scaler.joblib` hoje salva o objeto `FeatureScaler` completo, e nao apenas um `StandardScaler` puro, porque ele precisa lembrar quais colunas foram padronizadas e quais foram preservadas sem escala.
+- `model_mlp.joblib`
+- `model_rf.joblib`
 
-### Por que salvar tudo?
+### Motivacao
 
-Porque o modelo sozinho nao basta. Em producao, os novos dados precisam passar pelas **mesmas** transformacoes aprendidas no treino, na mesma ordem.
+O preprocessamento e o mesmo para todos os modelos treinados na mesma configuracao.
+Ja o estimador final varia.
+Por isso a persistencia foi separada em:
 
-### Estrutura
-
-O dataclass `PipelineArtifacts` encapsula:
-
-- `model`
-- `imputer`
-- `variance_filter`
-- `scaler`
-- `selected_features`
-
-Isso permite reproduzir o pipeline de inferencia de forma deterministica.
+- artefatos compartilhados;
+- artefato especifico do modelo.
 
 ---
 
-## Camada de Inferencia
+## Inferencia
 
 Arquivo: [predictor.py](/home/jv/sdn_ml_ddos_detection/ml/inference/predictor.py)
 
-### Observacao importante
+### Como funciona
 
-O nome da classe ainda e `DDoSPredictor` por compatibilidade com o historico do projeto, mas ela hoje opera no cenario multiclasse.
+O `DDoSPredictor`:
 
-### Fluxo de inferencia
+- carrega os artefatos com `ModelIO`;
+- recebe `model_name='mlp'` ou `model_name='rf'`;
+- reaplica o preprocessamento do treino na mesma ordem;
+- executa `predict`, `predict_proba` ou `predict_with_confidence`.
 
-1. `load()`
-   carrega todos os artefatos salvos.
+### Pipeline de inferencia
 
-2. `_preprocess(X)`
-   reaplica:
-   - imputacao;
-   - `VarianceThreshold`;
-   - selecao das features finais;
-   - escalonamento.
-
-3. `predict(X)`
-   retorna as classes codificadas.
-
-4. `predict_labels(X)`
-   converte os codigos para:
-   - `Normal`
-   - `Flooding`
-   - `Intrusao`
-
-5. `predict_proba(X)`
-   retorna probabilidades por classe.
-
-6. `predict_with_confidence(X)`
-   devolve:
-   - predicao inteira;
-   - label textual;
-   - confianca maxima.
-
-### Requisito de entrada
-
-O `DataFrame` de inferencia deve conter as mesmas colunas brutas do treino, sem a coluna alvo.
+1. entrada em `DataFrame`
+2. tratamento de `inf/NaN`
+3. imputacao
+4. `VarianceThreshold.transform`
+5. reordenacao das features esperadas
+6. `scaler.transform`
+7. predição do modelo carregado
 
 ---
 
-## Registro e Visualizacao de Experimentos
+## Orquestracao do Pipeline
 
-## 1. Historico de metricas
+Arquivo: [pipeline.py](/home/jv/sdn_ml_ddos_detection/ml/pipeline.py)
+
+### Funcao principal
+
+`run_pipeline()`
+
+### Etapas
+
+1. cria a pasta da run em `outputs/runs/<run_id>`;
+2. carrega o dataset;
+3. executa EDA opcional;
+4. faz `train_test_split` estratificado;
+5. limpa treino e aplica a mesma limpeza ao teste;
+6. executa selecao por variancia;
+7. escalona as features;
+8. aplica SMOTE no treino;
+9. resolve os modelos requisitados pelo argumento `--model`;
+10. executa um loop por modelo:
+   - baseline
+   - CV limpa
+   - avaliacao treino/teste
+   - learning curve
+   - gap de generalizacao
+   - tuning opcional
+   - explicabilidade, se RF
+   - persistencia
+   - logging
+
+### Modelos aceitos no CLI
+
+- `--model mlp`
+- `--model rf`
+- `--model both`
+
+---
+
+## Historico e Visualizacao
+
+## 1. Registro persistente
 
 Arquivo: [metrics_logger.py](/home/jv/sdn_ml_ddos_detection/ml/utils/metrics_logger.py)
 
-### O que faz
+### O que salva
 
-Registra cada run em:
+- `run_id`
+- `label`
+- `timestamp`
+- metricas
+- matriz de confusao
+- parametros
+- metadados do dataset
+- observacoes
+
+### Saidas
 
 - `outputs/metrics_history.json`
 - `outputs/metrics_history.csv`
 
-### O que e armazenado
-
-- `run_id`
-- `timestamp`
-- label da avaliacao
-- nomes das classes
-- metricas agregadas
-- matriz de confusao
-- hiperparametros
-- informacoes do dataset
-- diretorio de outputs da run
-- observacoes sobre gap treino/teste
-
-Isso permite comparar experimentos ao longo do tempo.
-
-## 2. Plotter de historico
+## 2. Plots de historico
 
 Arquivo: [metrics_plotter.py](/home/jv/sdn_ml_ddos_detection/ml/utils/metrics_plotter.py)
 
-### Graficos suportados
+### O que faz
 
-- evolucao das metricas por run;
-- comparacao entre duas runs;
-- radar chart;
-- heatmap da matriz de confusao;
-- dashboard consolidado.
-
----
-
-## Explicacao do `pipeline.py`
-
-Arquivo: [pipeline.py](/home/jv/sdn_ml_ddos_detection/ml/pipeline.py)
-
-A funcao `run_pipeline()` e o orquestrador do sistema.
-
-### Parametros de execucao
-
-- `run_tuning`
-  ativa ou desativa tuning.
-
-- `run_eda`
-  ativa ou desativa EDA textual.
-
-- `verbose`
-  reservado para controle de verbosidade.
-
-- `run_id`
-  identificador da execucao para o historico e para o subdiretorio `outputs/runs/<run_id>/`.
-
-- `sample_size`
-  permite amostra estratificada para experimentos rapidos.
-
-### Sequencia interna
-
-#### 1. Inicializacao
-
-- configura `numpy.random.seed`;
-- configura exibicao do `pandas`;
-- garante que `outputs/` existe;
-- cria um diretorio exclusivo para a run em `outputs/runs/<run_id>/`.
-
-#### 2. Carregamento
-
-- instancia `InSDNLoader`;
-- le o dataset;
-- opcionalmente executa `describe()`.
-
-#### 3. Split
-
-- usa `train_test_split`;
-- `stratify=y`;
-- preserva a distribuicao de classes;
-- guarda uma copia bruta do treino para diagnosticos limpos posteriores.
-
-#### 4. Limpeza
-
-- instancia `DataCleaner`;
-- limpa o treino com `fit_transform`;
-- limpa o teste com `transform`.
-
-#### 5. Selecao de features
-
-- instancia `FeatureSelector`;
-- gera ranking de importancia;
-- produz `X_train_sel` e `X_test_sel`.
-
-#### 6. Escalonamento
-
-- instancia `FeatureScaler`;
-- ajusta no treino;
-- reaplica no teste.
-
-#### 7. Balanceamento
-
-- instancia `ClassBalancer`;
-- aplica `SMOTE` apenas no treino.
-
-#### 8. Treinamento baseline
-
-- instancia `ModelTrainer`;
-- treina o baseline;
-- executa validacao cruzada limpa usando o treino bruto da etapa 3.
-
-#### 9. Avaliacao
-
-- instancia `ModelEvaluator`;
-- avalia em treino;
-- avalia em teste.
-
-#### 10. Diagnostico
-
-- instancia `TrainingDiagnostics`;
-- gera:
-  - `learning_curve`;
-  - `generalization_gap`;
-  - `generalization_report`.
-
-Importante:
-
-- a `learning_curve` usa preprocessamento refeito dentro de cada dobra;
-- o `generalization_gap` continua comparando o modelo final treinado em todo o treino contra o teste hold-out.
-
-#### 11. Tuning opcional
-
-- instancia `HyperparameterTuner`;
-- busca melhor configuracao;
-- reavalia treino e teste.
-
-#### 12. Persistencia
-
-- monta `PipelineArtifacts`;
-- salva com `ModelIO`.
-
-#### 13. Historico
-
-- registra resultados com `MetricsLogger`.
-
----
-
-## Features Utilizadas no Treinamento
-
-As features atuais sao:
-
-- `Protocol`
-- `Flow Duration`
-- `Tot Fwd Pkts`
-- `Tot Bwd Pkts`
-- `TotLen Fwd Pkts`
-- `TotLen Bwd Pkts`
-- `Flow Byts/s`
-- `Flow Pkts/s`
-- `Flow IAT Mean`
-- `Flow IAT Std`
-- `Flow IAT Max`
-- `Flow IAT Min`
-- `Bwd IAT Tot`
-- `Bwd IAT Mean`
-- `Bwd IAT Std`
-- `Bwd IAT Max`
-- `Bwd IAT Min`
-- `Bwd Pkts/s`
-- `Pkt Len Mean`
-- `Pkt Len Std`
-- `Pkt Len Var`
-- `Down/Up Ratio`
-- `SYN Flag Cnt`
-- `ACK Flag Cnt`
-- `Active Mean`
-- `Idle Mean`
-
-### Racional de escolha
-
-Essas features foram escolhidas por serem:
-
-- estatisticas de fluxo;
-- relativamente estaveis entre ambientes;
-- coerentes com deteccao de ataque por comportamento;
-- menos propensas a memorizar o cenario especifico do laboratorio.
-
----
-
-## Entradas, Saidas e Artefatos
-
-## Entradas
-
-- CSVs do InSDN em `dataset/InSDN_DatasetCSV/`
-
-## Saidas principais
-
-Em `models/`:
-
-- modelo treinado
-- imputer
-- filtro de variancia
-- scaler
-- lista de features selecionadas
-
-Em `outputs/`:
-
-- `metrics_history.json`
-- `metrics_history.csv`
-- subdiretorio `runs/`
-
-Em `outputs/runs/<run_id>/`:
-
-- curva de loss
-- curva de aprendizado
-- gap de generalizacao
-- relatorio de generalizacao
-- matrizes de confusao
-- importancia de features
+- lista runs;
+- plota evolucao das metricas;
+- compara duas runs;
+- gera radar chart;
+- revisita a matriz de confusao salva no historico;
+- gera dashboard agregado.
 
 ---
 
 ## Como Executar
 
-## Experimento rapido
+## Rodar apenas MLP
 
 ```bash
-python3 -m ml.pipeline --no-tuning --no-eda --sample-size 12000 --run-id experimento_rapido
+python3 -m ml.pipeline --model mlp --no-tuning --run-id mlp_full
 ```
 
-## Baseline no dataset completo
+## Rodar apenas RandomForest
 
 ```bash
-python3 -m ml.pipeline --no-tuning --run-id baseline_full
+python3 -m ml.pipeline --model rf --no-tuning --run-id rf_full
 ```
 
-## Com tuning
+## Rodar ambos
 
 ```bash
-python3 -m ml.pipeline --run-id tuned_full
+python3 -m ml.pipeline --model both --no-tuning --run-id comparativo_full
 ```
 
-## Visualizacao do historico
+## Rodar experimento rapido
 
 ```bash
-python3 -m ml.utils.metrics_plotter --list
-python3 -m ml.utils.metrics_plotter --dashboard
-python3 -m ml.utils.metrics_plotter --compare baseline_full tuned_full
+python3 -m ml.pipeline --model both --no-tuning --no-eda --sample-size 12000 --run-id rapido
 ```
 
 ---
 
-## Como Interpretar os Resultados
+## Como Ler os Artefatos Gerados
 
-### `feature_importance_multiclass.png`
+Dentro de `outputs/runs/<run_id>/` podem aparecer:
 
-Mostra quais atributos mais influenciaram o modelo final da run.
+- `loss_curve_mlp_baseline.png`
+- `learning_curve_mlp_baseline.png`
+- `learning_curve_rf_baseline.png`
+- `generalization_gap_*.png`
+- `generalization_report_*.json`
+- `confusion_matrix_*.png`
+- `rf_feature_importance_*.png`
+- `rf_shap_importance_*.png` se `shap` estiver instalado
 
-### `loss_curve_baseline.png`
+Interpretacao geral:
 
-Mostra convergencia do MLP ao longo das epocas.
-
-### `learning_curve_baseline.png`
-
-Mostra como o desempenho evolui com mais dados.
-
-### `generalization_gap_baseline.png`
-
-Compara treino e teste para detectar overfitting.
-
-### `generalization_report_baseline.json`
-
-Versiona numericamente o gap entre treino e teste.
-
-### `confusion_matrix_*.png`
-
-Mostra exatamente onde o modelo confunde as classes.
-
-### `metrics_history.json` e `metrics_history.csv`
-
-Guardam o historico agregado dos experimentos, enquanto os graficos e relatorios detalhados ficam separados por run em `outputs/runs/<run_id>/`.
+- `loss_curve`: apenas MLP; mostra convergencia do treino
+- `learning_curve`: compara score de treino e validacao por volume de dados
+- `generalization_gap`: compara treino vs teste
+- `confusion_matrix`: mostra os tipos de erro por classe
+- `rf_feature_importance`: mostra quais atributos mais influenciaram o RF
 
 ---
 
-## Garantias Metodologicas do Projeto
+## Fluxo de Extensao para Novos Modelos
 
-O codigo atual garante:
+Para adicionar um novo modelo ao projeto, o caminho esperado e:
 
-- reproducibilidade via `RANDOM_STATE`;
-- `split` antes do preprocessamento;
-- imputacao aprendida apenas no treino;
-- escalonamento aprendido apenas no treino;
-- preservacao de colunas binarias sem padronizacao;
-- selecao de features baseada apenas no treino;
-- `SMOTE` apenas no treino;
-- validacao cruzada com preprocessamento refeito dentro de cada dobra;
-- curva de aprendizado com preprocessamento refeito dentro de cada dobra;
-- avaliacao final isolada no teste;
-- separacao fisica dos artefatos graficos e relatorios por `run_id`;
-- persistencia de todos os transformadores necessarios para inferencia.
+1. criar o construtor baseline em `ml/models/`;
+2. registrar o modelo em [registry.py](/home/jv/sdn_ml_ddos_detection/ml/models/registry.py);
+3. definir:
+   - `key`
+   - `display_name`
+   - `persistence_filename`
+   - `tracked_params`
+   - `param_distributions`
+   - capacidades especificas
+4. opcionalmente criar um modulo especializado, se houver explicabilidade ou diagnostico exclusivos.
 
-Essas garantias sao o nucleo da confiabilidade metodologica do pacote.
+Como `trainer`, `tuner`, `evaluator`, `model_io` e `pipeline` ja operam de forma generica, esse processo tende a exigir pouca alteracao fora do registro.
 
 ---
 
 ## Limitacoes Atuais
 
-Mesmo estando bem implementado, o sistema tem limitacoes naturais:
-
-- o baseline usa uma arquitetura fixa de MLP;
-- a qualidade do agrupamento `Intrusao` depende da coerencia entre tipos de ataque diferentes;
-- os resultados de amostras rapidas nao substituem validacao completa no dataset inteiro;
-- o nome `DDoSPredictor` ainda nao reflete o escopo multiclasse atual;
-- a validacao cruzada limpa e a curva de aprendizado limpa custam mais tempo computacional do que a versao simplificada anterior.
+- o preprocessamento continua unico para todos os modelos na mesma configuracao;
+- o `RF` nao possui loss curve, por decisao deliberada;
+- o SHAP do RF depende da instalacao da biblioteca `shap`;
+- a persistencia comum assume que os modelos comparados compartilham as mesmas features selecionadas e o mesmo scaler;
+- o tuning foi generalizado, mas ainda depende de espacos de busca definidos manualmente em `config.py`.
 
 ---
 
-## Melhorias Futuras Recomendadas
+## Resumo Arquitetural
 
-- renomear `DDoSPredictor` para algo neutro, como `TrafficClassifierPredictor`;
-- implementar testes automatizados unitarios e de integracao para o pipeline;
-- adicionar validacao por grupo/cenario, se desejado;
-- comparar o MLP com outros baselines tabulares;
-- executar tuning completo no dataset integral;
-- separar melhor subtipos de `Intrusao` em experimentos posteriores.
+Em termos de implementacao, o projeto hoje funciona assim:
 
----
+- um unico pipeline de dados;
+- multiplos modelos supervisionados plugaveis;
+- preprocessamento compartilhado e metodologicamente seguro;
+- avaliacao, logging e diagnosticos reutilizaveis;
+- explicabilidade especializada apenas onde faz sentido, no `RandomForest`.
 
-## Conclusao
-
-O modulo `ml/` implementa um pipeline de ML tabular completo, reprodutivel e metodologicamente correto para classificar trafego SDN em `Normal`, `Flooding` e `Intrusao`.
-
-Ele foi projetado para:
-
-- minimizar vazamento de dados;
-- reduzir risco de memorizacao do ambiente;
-- preservar interpretabilidade;
-- permitir inferencia com os mesmos transformadores do treino;
-- oferecer diagnosticos objetivos de generalizacao e overfitting.
-
-Do ponto de vista tecnico, a implementacao esta organizada por responsabilidades, com modulos especializados para cada etapa do fluxo.
+Essa arquitetura permite comparar `MLP` e `RF` sem duplicar a maior parte do codigo, mantendo coerencia metodologica e reduzindo acoplamento desnecessario.

@@ -2,7 +2,7 @@
 Configuracoes globais do pipeline multiclasse de intrusao em SDN.
 
 Centraliza caminhos, mapeamentos de classes, features selecionadas por
-criterio de dominio e hiperparametros do MLP.
+criterio de dominio e hiperparametros dos modelos suportados.
 
 Ponto único de configuração — mude aqui e muda em todo o projeto.
 """
@@ -100,9 +100,8 @@ VARIANCE_THRESHOLD: float = 0.0   # só remove features completamente constantes
 IMPUTER_STRATEGY: str = "median"  # mediana é mais robusta que média quando há outliers
 SMOTE_K_NEIGHBORS: int = 5        # número de vizinhos usados pelo SMOTE para gerar amostras sintéticas
 
-# Selecao de features — amostra usada para calcular importâncias SHAP
+# Explicabilidade — amostra usada para calcular importâncias SHAP no RandomForest
 SHAP_SAMPLE_SIZE: int = 10_000    # 10k amostras são suficientes e mantêm o tempo razoável
-N_FEATURES_TO_SELECT: int | None = None  # None = usar todas; um número = pegar só as top N
 
 # Arquitetura MLP — 2 camadas ocultas (128 → 64 neurônios)
 MLP_HIDDEN_LAYERS: tuple[int, ...] = (128, 64)
@@ -114,6 +113,13 @@ MLP_LEARNING_RATE: str = "adaptive" # reduz a taxa automaticamente se a loss par
 MLP_EARLY_STOP: bool = True         # interrompe o treino se a validação interna não melhorar
 MLP_VAL_FRACTION: float = 0.1       # 10% do treino reservado para o critério de early stopping
 MLP_N_ITER_NO_CHG: int = 12         # quantas épocas sem melhora antes de parar
+
+# Arquitetura RandomForest — baseline regularizado para reduzir árvores excessivamente profundas
+RF_N_ESTIMATORS: int = 200
+RF_MAX_DEPTH: int | None = 16
+RF_MIN_SAMPLES_SPLIT: int = 4
+RF_MIN_SAMPLES_LEAF: int = 2
+RF_MAX_FEATURES: str | float = "sqrt"
 
 # Validacao cruzada
 CV_N_SPLITS: int = 3       # 3-fold — equilibrio razoável entre tempo e confiabilidade
@@ -131,7 +137,7 @@ LEARNING_CURVE_TRAIN_SIZES: tuple[float, ...] = (
 
 # Hyperparameter tuning — busca aleatória no espaço de hiperparâmetros
 TUNING_N_ITER: int = 12  # quantas combinações aleatórias testar (mais = melhor, porém mais lento)
-TUNING_PARAM_DISTRIBUTIONS: dict = {
+MLP_TUNING_PARAM_DISTRIBUTIONS: dict = {
     "hidden_layer_sizes": [   # arquiteturas candidatas a serem testadas
         (64, 32),
         (128, 64),
@@ -142,4 +148,11 @@ TUNING_PARAM_DISTRIBUTIONS: dict = {
     "learning_rate_init": [0.001, 0.0005, 0.0001],   # taxa de aprendizado inicial do Adam
     "learning_rate": ["constant", "adaptive"],
     "max_iter": [200, 250, 350],
+}
+RF_TUNING_PARAM_DISTRIBUTIONS: dict = {
+    "n_estimators": [150, 200, 300, 500],
+    "max_depth": [8, 12, 16, 24, None],
+    "min_samples_split": [2, 4, 8],
+    "min_samples_leaf": [1, 2, 4],
+    "max_features": ["sqrt", "log2", 0.7],
 }

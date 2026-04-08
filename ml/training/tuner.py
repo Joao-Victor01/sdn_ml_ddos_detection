@@ -1,38 +1,28 @@
 """
-Hyperparameter tuning com RandomizedSearchCV para classificacao multiclasse.
+Hyperparameter tuning genérico via RandomizedSearchCV.
 """
 
 from __future__ import annotations
 
 import time
 
-import numpy as np
+from sklearn.base import ClassifierMixin
 from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
-from sklearn.neural_network import MLPClassifier
 
-from ml.config import (
-    CV_N_SPLITS,
-    CV_SCORING,
-    MLP_VAL_FRACTION,
-    RANDOM_STATE,
-    TUNING_N_ITER,
-    TUNING_PARAM_DISTRIBUTIONS,
-)
+from ml.config import CV_N_SPLITS, CV_SCORING, RANDOM_STATE, TUNING_N_ITER
 
 
 class HyperparameterTuner:
-    """Busca os melhores hiperparametros do MLP via RandomizedSearchCV."""
+    """Busca hiperparâmetros para qualquer classificador compatível com sklearn."""
 
     def __init__(
         self,
         n_iter: int = TUNING_N_ITER,
-        param_distributions: dict | None = None,
         scoring: str = CV_SCORING,
         cv_n_splits: int = CV_N_SPLITS,
         random_state: int = RANDOM_STATE,
     ) -> None:
         self._n_iter = n_iter
-        self._param_distributions = param_distributions or TUNING_PARAM_DISTRIBUTIONS
         self._scoring = scoring
         self._cv_n_splits = cv_n_splits
         self._random_state = random_state
@@ -40,49 +30,37 @@ class HyperparameterTuner:
 
     def fit(
         self,
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-    ) -> MLPClassifier:
-        # O tuning entra depois do baseline: a ideia é procurar melhorias sem trocar todo o pipeline.
-        # StratifiedKFold dentro do tuning garante que cada combinação seja avaliada
-        # nas mesmas proporções de classes — sem isso, uma dobra desequilibrada
-        # poderia favorecer combinações de hiperparâmetros que não generalizam bem
+        X_train,
+        y_train,
+        *,
+        estimator: ClassifierMixin,
+        param_distributions: dict,
+        model_name: str,
+    ) -> ClassifierMixin:
         cv = StratifiedKFold(
             n_splits=self._cv_n_splits,
             shuffle=True,
             random_state=self._random_state,
         )
 
-        # Modelo base com parâmetros fixos — só os parâmetros do espaço de busca variam
-        base_mlp = MLPClassifier(
-            activation="relu",
-            solver="adam",
-            early_stopping=True,
-            validation_fraction=MLP_VAL_FRACTION,
-            random_state=self._random_state,
-            verbose=False,
-        )
-
-        # RandomizedSearchCV testa N combinações aleatórias do espaço definido em config.py
-        # Mais rápido que GridSearchCV (que testa todas as combinações) e geralmente eficaz
         self._search = RandomizedSearchCV(
-            estimator=base_mlp,
-            param_distributions=self._param_distributions,
-            n_iter=self._n_iter,      # quantas combinações aleatórias testar
+            estimator=estimator,
+            param_distributions=param_distributions,
+            n_iter=self._n_iter,
             cv=cv,
             scoring=self._scoring,
-            n_jobs=-1,                # usa todos os núcleos disponíveis
+            n_jobs=-1,
             random_state=self._random_state,
             verbose=1,
-            return_train_score=True,  # útil para diagnóstico de overfitting no tuning
+            return_train_score=True,
         )
 
         print(
-            f"\n[HyperparameterTuner] Iniciando busca ({self._n_iter} combinacoes, "
-            f"{self._cv_n_splits}-fold CV)..."
+            f"\n[HyperparameterTuner] Iniciando busca para {model_name} "
+            f"({self._n_iter} combinacoes, {self._cv_n_splits}-fold CV)..."
         )
         print(f"  Scoring: {self._scoring}")
-        print(f"  Espaco de busca: {list(self._param_distributions.keys())}")
+        print(f"  Espaco de busca: {list(param_distributions.keys())}")
 
         t0 = time.monotonic()
         self._search.fit(X_train, y_train)
@@ -94,7 +72,6 @@ class HyperparameterTuner:
             print(f"    {key}: {value}")
         print(f"  Melhor {self._scoring} (CV): {self._search.best_score_:.4f}")
 
-        # O sklearn já devolve o melhor estimador reajustado com todo o conjunto de treino.
         return self._search.best_estimator_
 
     @property

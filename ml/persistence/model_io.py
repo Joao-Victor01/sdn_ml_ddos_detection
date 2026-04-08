@@ -1,28 +1,22 @@
 """
-Persistência de artefatos do pipeline ML.
+Persistência dos artefatos do pipeline ML.
 
-responsável exclusivamente por salvar e carregar todos os objetos
-fitados durante o treinamento.
-
-Artefatos salvos:
-  mlp_ddos_insdn.joblib    — modelo MLP treinado
-  imputer.joblib           — SimpleImputer (fit no treino)
-  variance_filter.joblib   — VarianceThreshold (fit no treino)
-  scaler.joblib            — FeatureScaler (fit no treino)
-  selected_features.joblib — lista de features selecionadas pelo SHAP
+O preprocessamento é compartilhado por todos os modelos treinados na mesma
+configuração; cada estimador é salvo em um arquivo próprio.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import joblib
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.impute import SimpleImputer
-from sklearn.neural_network import MLPClassifier
 
 from ml.config import MODELS_DIR
+from ml.models.registry import get_model_spec
 from ml.preprocessing.scaler import FeatureScaler
 
 
@@ -30,104 +24,84 @@ from ml.preprocessing.scaler import FeatureScaler
 class PipelineArtifacts:
     """
     Conjunto de artefatos que compõem o pipeline de inferência.
-
-    Todos os campos devem estar fitados com os dados de TREINO antes
-    de serem salvos e usados em produção.
     """
 
-    model:             MLPClassifier
-    imputer:           SimpleImputer
-    variance_filter:   VarianceThreshold
-    scaler:            FeatureScaler
+    model_name: str
+    model: Any
+    imputer: SimpleImputer
+    variance_filter: VarianceThreshold
+    scaler: FeatureScaler
     selected_features: list[str]
 
 
 class ModelIO:
     """
-    Salva e carrega o pipeline completo de detecção de DDoS.
-
-    Uso (treino):
-        io = ModelIO()
-        io.save(artifacts)
-
-    Uso (produção):
-        io       = ModelIO()
-        pipeline = io.load()
-        preds    = pipeline.model.predict(scaler.transform(...))
+    Salva e carrega o pipeline completo de inferência por modelo.
     """
 
-    _FILENAMES = {
-        "model":             "mlp_ddos_insdn.joblib",
-        "imputer":           "imputer.joblib",
-        "variance_filter":   "variance_filter.joblib",
-        "scaler":            "scaler.joblib",
+    _COMMON_FILENAMES = {
+        "imputer": "imputer.joblib",
+        "variance_filter": "variance_filter.joblib",
+        "scaler": "scaler.joblib",
         "selected_features": "selected_features.joblib",
     }
 
     def __init__(self, models_dir: Path | str = MODELS_DIR) -> None:
         self._dir = Path(models_dir)
 
-    # ── API pública ────────────────────────────────────────────────────────────
-
     def save(self, artifacts: PipelineArtifacts) -> None:
-        """
-        Salva todos os artefatos do pipeline em models/.
-
-        Salva cada objeto fitado separadamente com joblib — mais eficiente que pickle
-        para arrays NumPy (usa compressão e mmap). Cria o diretório se não existir.
-        """
         self._dir.mkdir(parents=True, exist_ok=True)
+        model_spec = get_model_spec(artifacts.model_name)
 
-        # Salvamos tudo separadinho porque isso facilita trocar só uma peça depois, se precisar.
-        pairs = [
-            ("model",             artifacts.model),
-            ("imputer",           artifacts.imputer),
-            ("variance_filter",   artifacts.variance_filter),
-            ("scaler",            artifacts.scaler),
+        common_pairs = [
+            ("imputer", artifacts.imputer),
+            ("variance_filter", artifacts.variance_filter),
+            ("scaler", artifacts.scaler),
             ("selected_features", artifacts.selected_features),
         ]
 
         print(f"\n[ModelIO] Salvando artefatos em {self._dir}/")
-        for key, obj in pairs:
-            path = self._dir / self._FILENAMES[key]
-            with open(path, "wb") as f:
-                joblib.dump(obj, f)
-            print(f"  ✓ {self._FILENAMES[key]}")
+        for key, obj in common_pairs:
+            path = self._dir / self._COMMON_FILENAMES[key]
+            with open(path, "wb") as file:
+                joblib.dump(obj, file)
+            print(f"  ✓ {self._COMMON_FILENAMES[key]}")
 
-        print(f"[ModelIO] {len(pairs)} artefatos salvos com sucesso.")
-        print("\n  Estrutura salva:")
-        print(f"  {self._dir}/")
-        for fname in self._FILENAMES.values():
-            print(f"    ├── {fname}")
+        model_path = self._dir / model_spec.persistence_filename
+        with open(model_path, "wb") as file:
+            joblib.dump(artifacts.model, file)
+        print(f"  ✓ {model_spec.persistence_filename}")
 
-    def load(self) -> PipelineArtifacts:
-        """
-        Carrega todos os artefatos do pipeline a partir de models/.
+        print(f"[ModelIO] Artefatos do modelo '{artifacts.model_name}' salvos com sucesso.")
 
-        Returns
-        -------
-        PipelineArtifacts com todos os objetos fitados prontos para inferência.
-
-        Raises
-        ------
-        FileNotFoundError se qualquer artefato estiver ausente.
-        """
+    def load(self, model_name: str = "mlp") -> PipelineArtifacts:
         print(f"[ModelIO] Carregando artefatos de {self._dir}/")
+        model_spec = get_model_spec(model_name)
 
-        loaded = {}
-        for key, fname in self._FILENAMES.items():
+        loaded: dict[str, Any] = {}
+        for key, fname in self._COMMON_FILENAMES.items():
             path = self._dir / fname
             if not path.exists():
                 raise FileNotFoundError(
                     f"Artefato não encontrado: {path}\n"
-                    f"Execute o pipeline de treinamento primeiro."
+                    "Execute o pipeline de treinamento primeiro."
                 )
-            with open(path, "rb") as f:
-                loaded[key] = joblib.load(f)
+            with open(path, "rb") as file:
+                loaded[key] = joblib.load(file)
             print(f"  ✓ {fname}")
 
-        # No fim remontamos um objeto único para a inferência trabalhar sem se preocupar com arquivos.
+        model_path = self._dir / model_spec.persistence_filename
+        if not model_path.exists():
+            raise FileNotFoundError(
+                f"Modelo não encontrado: {model_path}\n"
+                f"Execute o pipeline com --model {model_name} primeiro."
+            )
+        with open(model_path, "rb") as file:
+            loaded["model"] = joblib.load(file)
+        print(f"  ✓ {model_spec.persistence_filename}")
+
         return PipelineArtifacts(
+            model_name=model_name,
             model=loaded["model"],
             imputer=loaded["imputer"],
             variance_filter=loaded["variance_filter"],
@@ -135,9 +109,7 @@ class ModelIO:
             selected_features=loaded["selected_features"],
         )
 
-    def exists(self) -> bool:
-        """Verifica se todos os artefatos já foram salvos."""
-        return all(
-            (self._dir / fname).exists()
-            for fname in self._FILENAMES.values()
-        )
+    def exists(self, model_name: str = "mlp") -> bool:
+        model_spec = get_model_spec(model_name)
+        required = list(self._COMMON_FILENAMES.values()) + [model_spec.persistence_filename]
+        return all((self._dir / fname).exists() for fname in required)

@@ -17,14 +17,20 @@ class DDoSPredictor:
     multiclasse: Normal / Flooding / Intrusao.
     """
 
-    def __init__(self, models_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        models_dir: str | None = None,
+        model_name: str = "mlp",
+    ) -> None:
         self._io = ModelIO(*([models_dir] if models_dir else []))
+        self._model_name = model_name
         self._artifacts: PipelineArtifacts | None = None
 
     def load(self) -> "DDoSPredictor":
         # Carrega tudo de uma vez para a inferência não precisar conhecer detalhes do treinamento.
-        self._artifacts = self._io.load()
+        self._artifacts = self._io.load(model_name=self._model_name)
         print("[DDoSPredictor] Pipeline carregado com sucesso.")
+        print(f"  Modelo carregado     : {self._model_name}")
         print(
             f"  Features esperadas ({len(self._artifacts.selected_features)}): "
             f"{self._artifacts.selected_features}"

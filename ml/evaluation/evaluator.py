@@ -10,6 +10,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from imblearn.metrics import geometric_mean_score
+from sklearn.base import ClassifierMixin
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     accuracy_score,
@@ -22,7 +23,6 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.neural_network import MLPClassifier
 
 from ml.config import OUTPUTS_DIR, TARGET_NAMES
 
@@ -85,7 +85,7 @@ class ModelEvaluator:
 
     def evaluate(
         self,
-        model: MLPClassifier,
+        model: ClassifierMixin,
         X: np.ndarray,
         y_true: np.ndarray,
         label: str = "Modelo",

@@ -1,5 +1,8 @@
 """
-Treinamento do modelo MLP e validacao cruzada.
+Treinamento e validacao cruzada de classificadores supervisionados.
+
+O preprocessamento permanece igual para todos os modelos; o que varia
+é apenas o estimador passado para este módulo.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.base import clone
+from sklearn.base import ClassifierMixin, clone
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -21,11 +24,9 @@ from sklearn.metrics import (
     recall_score,
 )
 from sklearn.model_selection import StratifiedKFold
-from sklearn.neural_network import MLPClassifier
 
 from ml.config import CV_N_SPLITS, OUTPUTS_DIR, RANDOM_STATE
 from ml.features.selector import FeatureSelector
-from ml.models.mlp_model import build_baseline_mlp
 from ml.preprocessing.balancer import ClassBalancer
 from ml.preprocessing.cleaner import DataCleaner
 from ml.preprocessing.scaler import FeatureScaler
@@ -38,15 +39,14 @@ def fit_fold_pipeline(
     y_valid: pd.Series,
     *,
     random_state: int,
-    base_model: MLPClassifier | None = None,
-) -> tuple[MLPClassifier, pd.DataFrame, np.ndarray, pd.DataFrame, np.ndarray]:
+    base_model: ClassifierMixin,
+) -> tuple[ClassifierMixin, pd.DataFrame, np.ndarray, pd.DataFrame, np.ndarray]:
     """
     Ajusta todo o pipeline de preprocessamento dentro de uma dobra.
 
-    Isso evita que limpeza, selecao, escalonamento e SMOTE "vejam" a parte
-    de validacao antes da hora — cada dobra é tratada como um experimento isolado.
+    Isso evita vazamento de dados: imputação, seleção, escalonamento e
+    SMOTE são aprendidos apenas com o treino da dobra.
     """
-    # Limpeza: o fit aprende as medianas só do treino da dobra, não do conjunto todo
     cleaner = DataCleaner()
     X_train_clean, y_train_clean = cleaner.fit_transform(
         X_train.reset_index(drop=True),
@@ -57,22 +57,18 @@ def fit_fold_pipeline(
         y_valid.reset_index(drop=True),
     )
 
-    # Seleção: compute_importance=False pula o SHAP — muito lento para rodar em cada dobra
-    selector = FeatureSelector(save_plots=False, compute_importance=False)
+    selector = FeatureSelector()
     X_train_sel = selector.fit_transform(X_train_clean, y_train_clean)
     X_valid_sel = selector.transform(X_valid_clean)
 
-    # Escalonamento: fit apenas no treino da dobra
     scaler = FeatureScaler()
     X_train_scaled = scaler.fit_transform(X_train_sel)
     X_valid_scaled = scaler.transform(X_valid_sel)
 
-    # SMOTE apenas no treino — nunca na validação
     balancer = ClassBalancer(random_state=random_state)
     X_train_bal, y_train_bal = balancer.fit_resample(X_train_scaled, y_train_clean)
 
-    # clone() cria uma cópia "limpa" do modelo (sem pesos treinados) para esta dobra
-    model = clone(base_model) if base_model is not None else build_baseline_mlp(random_state)
+    model = clone(base_model)
     model.fit(X_train_bal, np.asarray(y_train_bal))
 
     return (
@@ -85,7 +81,7 @@ def fit_fold_pipeline(
 
 
 class ModelTrainer:
-    """Treina o MLP baseline e executa validacao cruzada no treino."""
+    """Treina o baseline e executa validacao cruzada limpa."""
 
     def __init__(
         self,
@@ -104,30 +100,26 @@ class ModelTrainer:
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
-        model: MLPClassifier | None = None,
-        label: str = "baseline",
-    ) -> MLPClassifier:
-        if model is None:
-            model = build_baseline_mlp(self._random_state)
-
-        print("\n[ModelTrainer] Iniciando treinamento do MLP...")
-        print(f"  Arquitetura : {model.hidden_layer_sizes}")
-        print(f"  Solver      : {model.solver}")
-        print(f"  Ativacao    : {model.activation}")
-        print(f"  Alpha       : {model.alpha}")
-        print(f"  max_iter    : {model.max_iter}")
-        print(f"  Shape treino: {X_train.shape}")
+        model: ClassifierMixin,
+        model_name: str,
+        label: str,
+        supports_loss_curve: bool = False,
+    ) -> ClassifierMixin:
+        print(f"\n[ModelTrainer] Iniciando treinamento do {model_name}...")
+        self._print_model_details(model, X_train)
 
         t0 = time.monotonic()
         model.fit(X_train, y_train)
         elapsed = time.monotonic() - t0
 
         print(f"\n[ModelTrainer] Treinamento concluido em {elapsed:.1f}s")
-        print(f"  Epocas executadas : {model.n_iter_}")
-        print(f"  Loss final        : {model.loss_:.6f}")
+        if hasattr(model, "n_iter_"):
+            print(f"  Iteracoes/epocas executadas : {getattr(model, 'n_iter_')}")
+        if hasattr(model, "loss_"):
+            print(f"  Loss final                  : {getattr(model, 'loss_'):.6f}")
 
-        if self._save_plots:
-            self._plot_loss_curve(model, label=label)
+        if self._save_plots and supports_loss_curve:
+            self._plot_loss_curve(model, label=label, model_name=model_name)
 
         return model
 
@@ -135,8 +127,9 @@ class ModelTrainer:
         self,
         X_train: pd.DataFrame,
         y_train: pd.Series,
+        base_model: ClassifierMixin,
+        model_name: str,
     ) -> dict[str, tuple[float, float]]:
-        # StratifiedKFold garante que cada dobra tem a mesma proporção de classes
         cv = StratifiedKFold(
             n_splits=self._cv_n_splits,
             shuffle=True,
@@ -152,7 +145,7 @@ class ModelTrainer:
 
         print(
             f"\n[ModelTrainer] Validacao cruzada limpa ({self._cv_n_splits}-fold) "
-            "no conjunto de treino:"
+            f"no conjunto de treino para {model_name}:"
         )
         history: dict[str, list[float]] = {metric: [] for metric in scoring}
 
@@ -162,7 +155,6 @@ class ModelTrainer:
             X_fold_valid = X_train.iloc[valid_idx].reset_index(drop=True)
             y_fold_valid = y_train.iloc[valid_idx].reset_index(drop=True)
 
-            # redirect_stdout suprime os prints do pipeline interno para não poluir o log do CV
             with redirect_stdout(io.StringIO()):
                 model, _, _, X_valid_scaled, y_valid_arr = fit_fold_pipeline(
                     X_fold_train,
@@ -170,9 +162,9 @@ class ModelTrainer:
                     X_fold_valid,
                     y_fold_valid,
                     random_state=self._random_state,
+                    base_model=base_model,
                 )
 
-            # Calcula todas as métricas para esta dobra e acumula
             y_pred = model.predict(X_valid_scaled)
             history["accuracy"].append(float(accuracy_score(y_valid_arr, y_pred)))
             history["balanced_accuracy"].append(
@@ -195,7 +187,6 @@ class ModelTrainer:
                 float(recall_score(y_valid_arr, y_pred, average="macro", zero_division=0))
             )
 
-        # Retorna média ± desvio padrão de cada métrica — o desvio indica estabilidade entre dobras
         results: dict[str, tuple[float, float]] = {}
         for metric in scoring:
             values = np.array(history[metric], dtype=float)
@@ -206,7 +197,45 @@ class ModelTrainer:
 
         return results
 
-    def _plot_loss_curve(self, model: MLPClassifier, label: str) -> None:
+    def _print_model_details(
+        self,
+        model: ClassifierMixin,
+        X_train: np.ndarray,
+    ) -> None:
+        params = model.get_params(deep=False)
+        print(f"  Classe      : {model.__class__.__name__}")
+        print(f"  Shape treino: {X_train.shape}")
+
+        tracked_keys = (
+            "hidden_layer_sizes",
+            "solver",
+            "activation",
+            "alpha",
+            "max_iter",
+            "n_estimators",
+            "max_depth",
+            "min_samples_split",
+            "min_samples_leaf",
+            "max_features",
+        )
+        for key in tracked_keys:
+            if key in params:
+                print(f"  {key:<12}: {params[key]}")
+
+    def _plot_loss_curve(
+        self,
+        model: ClassifierMixin,
+        *,
+        label: str,
+        model_name: str,
+    ) -> None:
+        if not hasattr(model, "loss_curve_"):
+            print(
+                f"[ModelTrainer] {model_name} nao expoe loss_curve_; "
+                "plot pulado."
+            )
+            return
+
         try:
             fig, ax = plt.subplots(figsize=(10, 4))
             ax.plot(model.loss_curve_, label="Loss de treino", color="steelblue")
@@ -221,7 +250,7 @@ class ModelTrainer:
 
             ax.set_xlabel("Epocas")
             ax.set_ylabel("Loss / Score")
-            ax.set_title(f"Curva de convergencia — MLP {label}")
+            ax.set_title(f"Curva de convergencia — {model_name} {label}")
             ax.legend()
             ax.grid(alpha=0.25)
             plt.tight_layout()
