@@ -9,10 +9,10 @@ Fluxo:
   5. selecao de features por variancia
   6. escalonamento
   7. balanceamento SMOTE apenas no treino
-  8. treinamento e validacao cruzada por modelo
+  8. treinamento e validacao cruzada
   9. avaliacao em treino/teste para diagnostico de overfitting
-  10. tuning opcional por modelo
-  11. salvamento de artefatos, metricas e graficos auxiliares
+  10. tuning opcional
+  11. permutation importance + salvamento de artefatos e metricas
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from ml.config import (
 )
 from ml.data.loader import InSDNLoader
 from ml.evaluation.evaluator import EvaluationResult, ModelEvaluator
-from ml.features.rf_explainer import RandomForestExplainer
+from ml.features.permutation_importance import PermutationImportanceAnalyzer
 from ml.features.selector import FeatureSelector
 from ml.models.registry import ModelSpec, resolve_requested_models
 from ml.persistence.model_io import ModelIO, PipelineArtifacts
@@ -170,6 +170,7 @@ def _run_model_flow(
     y_train_bal: pd.Series,
     run_output_dir: Path,
     run_tuning: bool,
+    run_permutation_importance: bool,
     dataset_info_base: dict,
     cleaner: DataCleaner,
     selector: FeatureSelector,
@@ -291,12 +292,13 @@ def _run_model_flow(
     else:
         print(f"\n[10/11] Tuning ignorado para {spec.display_name}.")
 
-    if spec.supports_explainability:
-        explainer = RandomForestExplainer(output_dir=run_output_dir)
-        explain_label = f"{spec.key}_{'otimizado' if run_tuning else 'baseline'}"
-        explainer.explain(model_final, X_train_scaled, explain_label)
-
     print(f"\n[11/11] Salvando artefatos e metricas ({spec.display_name})...")
+
+    if run_permutation_importance and spec.supports_permutation_importance:
+        pi_label = f"{spec.key}_{'otimizado' if run_tuning and spec.supports_tuning else 'baseline'}"
+        analyzer = PermutationImportanceAnalyzer(output_dir=run_output_dir)
+        analyzer.analyze(model_final, X_test_scaled, y_test.values, label=pi_label)
+
     _save_model_artifacts(
         spec=spec,
         model=model_final,
@@ -322,6 +324,7 @@ def _run_model_flow(
 def run_pipeline(
     run_tuning: bool = True,
     run_eda: bool = True,
+    run_permutation_importance: bool = True,
     verbose: bool = True,
     run_id: str | None = None,
     sample_size: int | None = None,
@@ -346,11 +349,12 @@ def run_pipeline(
     print("=" * 72)
 
     print("\n[1/11] Configuracoes")
-    print(f"  RANDOM_STATE : {RANDOM_STATE}")
-    print(f"  TEST_SIZE    : {TEST_SIZE} (70/30)")
-    print(f"  SAMPLE_SIZE  : {sample_size if sample_size else 'dataset completo'}")
-    print(f"  RUN_ID       : {effective_run_id}")
-    print(f"  OUTPUT_DIR   : {run_output_dir}")
+    print(f"  RANDOM_STATE              : {RANDOM_STATE}")
+    print(f"  TEST_SIZE                 : {TEST_SIZE} (70/30)")
+    print(f"  SAMPLE_SIZE               : {sample_size if sample_size else 'dataset completo'}")
+    print(f"  RUN_ID                    : {effective_run_id}")
+    print(f"  OUTPUT_DIR                : {run_output_dir}")
+    print(f"  PERMUTATION_IMPORTANCE    : {'sim' if run_permutation_importance else 'nao'}")
 
     print("\n[2/11] Carregando dataset...")
     loader = InSDNLoader()
@@ -430,6 +434,7 @@ def run_pipeline(
             y_train_bal=y_train_bal,
             run_output_dir=run_output_dir,
             run_tuning=run_tuning,
+            run_permutation_importance=run_permutation_importance,
             dataset_info_base=dataset_info_base,
             cleaner=cleaner,
             selector=selector,
@@ -466,6 +471,11 @@ if __name__ == "__main__":
         help="Pula a EDA textual.",
     )
     parser.add_argument(
+        "--no-permutation-importance",
+        action="store_true",
+        help="Pula o calculo de permutation importance (mais rapido).",
+    )
+    parser.add_argument(
         "--run-id",
         type=str,
         default=None,
@@ -479,15 +489,16 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        choices=["mlp", "rf", "both"],
+        choices=["mlp"],
         default="mlp",
-        help="Modelo a executar: mlp, rf ou both.",
+        help="Modelo a executar (atualmente apenas 'mlp').",
     )
 
     args = parser.parse_args()
     run_pipeline(
         run_tuning=not args.no_tuning,
         run_eda=not args.no_eda,
+        run_permutation_importance=not args.no_permutation_importance,
         run_id=args.run_id,
         sample_size=args.sample_size,
         model_key=args.model,

@@ -1,10 +1,10 @@
 """
 Selecao de features em duas camadas:
-  1. filtro de dominio no loader
-  2. VarianceThreshold no pipeline
+  1. filtro de dominio no loader (26 features estatisticas de fluxo)
+  2. VarianceThreshold no pipeline (remove features completamente constantes)
 
-O ranking SHAP deixou de fazer parte da seleção geral e agora é usado
-apenas para explicabilidade do RandomForest.
+A importancia supervisionada das features — quais pesam mais para o modelo —
+e calculada separadamente pelo PermutationImportanceAnalyzer apos o treino.
 """
 
 from __future__ import annotations

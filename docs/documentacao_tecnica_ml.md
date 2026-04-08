@@ -21,10 +21,7 @@ Mapeamento dos labels originais:
 - `BOTNET -> Intrusao`
 - `U2R -> Intrusao`
 
-O pipeline hoje suporta dois modelos supervisionados:
-
-- `MLPClassifier`
-- `RandomForestClassifier`
+O modelo supervisionado utilizado e o `MLPClassifier` (Rede Neural Multicamada).
 
 A implementacao segue a ordem metodologica de [guia_boas_praticas_ml.md](/home/jv/sdn_ml_ddos_detection/docs/guia_boas_praticas_ml.md):
 
@@ -33,6 +30,7 @@ A implementacao segue a ordem metodologica de [guia_boas_praticas_ml.md](/home/j
 - `SMOTE` apenas no treino;
 - validacao cruzada e learning curve com preprocessamento refeito em cada dobra;
 - avaliacao separada em treino e teste para diagnostico de generalizacao;
+- permutation importance calculada no conjunto de teste para interpretabilidade real;
 - persistencia do modelo e dos transformadores fitados.
 
 ---
@@ -43,15 +41,16 @@ O modulo tem quatro responsabilidades principais:
 
 1. carregar e consolidar o dataset bruto;
 2. preparar os dados com um pipeline metodologicamente correto;
-3. treinar, validar e avaliar um ou mais modelos;
+3. treinar, validar, avaliar e interpretar o MLP;
 4. salvar artefatos reutilizaveis para inferencia posterior.
 
 Na pratica, ele transforma os CSVs do InSDN em:
 
-- modelos treinados;
+- modelo treinado;
 - transformadores de preprocessamento fitados;
 - metricas e historico de experimentos;
 - graficos de diagnostico;
+- ranking de permutation importance por feature;
 - mecanismo de inferencia em novos fluxos.
 
 ---
@@ -70,10 +69,9 @@ ml/
 │   └── balancer.py
 ├── features/
 │   ├── selector.py
-│   └── rf_explainer.py
+│   └── permutation_importance.py
 ├── models/
 │   ├── mlp_model.py
-│   ├── rf_model.py
 │   └── registry.py
 ├── training/
 │   ├── trainer.py
@@ -106,12 +104,11 @@ graph TD
     B --> G[preprocessing/balancer.py<br/>SMOTE]
     B --> H[models/registry.py<br/>Registro de modelos]
     H --> I[models/mlp_model.py<br/>Baseline MLP]
-    H --> J[models/rf_model.py<br/>Baseline RF]
     B --> K[training/trainer.py<br/>Treino + CV]
     B --> L[training/tuner.py<br/>RandomizedSearchCV]
     B --> M[evaluation/evaluator.py<br/>Metricas + CM]
     B --> N[utils/training_diagnostics.py<br/>Learning curve + gap]
-    B --> O[features/rf_explainer.py<br/>Importance + SHAP do RF]
+    B --> O[features/permutation_importance.py<br/>Importancia por permutacao]
     B --> P[persistence/model_io.py<br/>Salvar artefatos]
     B --> Q[utils/metrics_logger.py<br/>Historico JSON/CSV]
     R[inference/predictor.py<br/>Inferencia] --> P
@@ -141,17 +138,14 @@ graph TD
     M --> O[FeatureScaler.transform]
 
     N --> P[SMOTE apenas no treino]
-    P --> Q[Loop por modelo]
+    P --> Q[Baseline MLP]
 
-    Q --> R[Baseline]
-    Q --> S[CV limpa]
-    Q --> T[Avaliacao treino]
-    Q --> U[Avaliacao teste]
-    Q --> V[Tuning opcional]
-    Q --> W[Persistencia por modelo]
-    Q --> X[MetricsLogger]
-
-    Q --> Y[RF Explainer somente se modelo = RF]
+    Q --> R[CV limpa]
+    Q --> S[Avaliacao treino/teste]
+    Q --> T[Tuning opcional]
+    Q --> U[Permutation Importance no teste]
+    Q --> V[Persistencia]
+    Q --> W[MetricsLogger]
 ```
 
 ## 3. Fluxo de Inferencia
@@ -159,50 +153,54 @@ graph TD
 ```mermaid
 graph TD
     A[Novos fluxos] --> B[DDoSPredictor]
-    B --> C[ModelIO.load(model_name)]
-    C --> D[Artefatos comuns + modelo escolhido]
+    B --> C[ModelIO.load]
+    C --> D[Artefatos comuns + modelo MLP]
     D --> E[Imputacao]
     E --> F[VarianceThreshold.transform]
     F --> G[Selecionar mesmas features]
     G --> H[Scaler.transform]
-    H --> I[Model.predict / predict_proba]
+    H --> I[MLP.predict / predict_proba]
     I --> J[Normal / Flooding / Intrusao]
 ```
 
-## 4. Arquitetura dos Modelos
+## 4. Arquitetura do Modelo
 
 ```mermaid
 graph TD
-    A[26 features] --> B1[MLP<br/>128 -> 64<br/>ReLU]
-    A --> B2[RandomForest<br/>200 arvores<br/>max_depth 16]
-    B1 --> C[Saida multiclasse]
-    B2 --> C
-    C --> D[3 classes]
+    A[26 features] --> B[MLP<br/>128 -> 64<br/>ReLU + Adam + Early Stopping]
+    B --> C[Saida softmax multiclasse]
+    C --> D[3 classes: Normal / Flooding / Intrusao]
 ```
 
 ---
 
 ## Principios de Projeto
 
-A refatoracao atual segue uma linha proxima de `SOLID`:
+A implementacao segue os principios `SOLID`:
 
 - `SRP`
   Cada modulo tem uma responsabilidade clara.
-  `cleaner.py` limpa, `trainer.py` treina, `evaluator.py` avalia, `model_io.py` persiste.
+  `cleaner.py` limpa, `trainer.py` treina, `evaluator.py` avalia,
+  `permutation_importance.py` interpreta, `model_io.py` persiste.
 
 - `OCP`
-  O pipeline foi aberto para extensao via [registry.py](/home/jv/sdn_ml_ddos_detection/ml/models/registry.py).
-  Para adicionar um novo modelo, o caminho principal e registrar um novo `ModelSpec`.
+  O pipeline e aberto para extensao via [registry.py](/home/jv/sdn_ml_ddos_detection/ml/models/registry.py).
+  Para adicionar um novo modelo, basta registrar um novo `ModelSpec`.
+  A flag `supports_permutation_importance` no `ModelSpec` controla
+  quais modelos executam a analise de importancia.
 
 - `LSP`
-  O treinamento, a avaliacao e os diagnosticos operam sobre estimadores compatíveis com a API do `scikit-learn`, sem depender de uma classe concreta.
+  O treinamento, a avaliacao e os diagnosticos operam sobre estimadores
+  compativeis com a API do `scikit-learn`, sem depender de uma classe concreta.
 
 - `ISP`
-  As capacidades especificas foram separadas.
-  Exemplo: explicabilidade ficou em [rf_explainer.py](/home/jv/sdn_ml_ddos_detection/ml/features/rf_explainer.py), nao no seletor geral.
+  Capacidades especificas foram separadas em modulos proprios.
+  A interpretabilidade ficou em `permutation_importance.py`, desacoplada
+  do seletor de features e do modelo em si.
 
 - `DIP`
-  O pipeline depende de abstracoes simples como `ModelSpec` e da interface comum dos estimadores sklearn, nao de detalhes internos de um unico modelo.
+  O pipeline depende de abstracoes simples como `ModelSpec` e da interface
+  comum dos estimadores sklearn, nao de detalhes internos de um unico modelo.
 
 ---
 
@@ -235,17 +233,20 @@ Principais grupos de configuracao:
   - `IMPUTER_STRATEGY`
   - `SMOTE_K_NEIGHBORS`
 
-- modelos:
+- modelo MLP:
   - `MLP_*`
-  - `RF_*`
 
 - tuning:
   - `MLP_TUNING_PARAM_DISTRIBUTIONS`
-  - `RF_TUNING_PARAM_DISTRIBUTIONS`
+
+- permutation importance:
+  - `PERMUTATION_IMPORTANCE_N_REPEATS`
+  - `PERMUTATION_IMPORTANCE_SCORING`
 
 Decisao importante:
 o projeto nao usa todas as colunas do dataset.
-Ele parte de uma lista curada de `26` atributos estatisticos de fluxo para evitar memorizacao de identificadores de ambiente como IP, porta, `Flow ID` e `Timestamp`.
+Ele parte de uma lista curada de `26` atributos estatisticos de fluxo para evitar memorizacao
+de identificadores de ambiente como IP, porta, `Flow ID` e `Timestamp`.
 
 ---
 
@@ -307,12 +308,9 @@ Arquivo: [selector.py](/home/jv/sdn_ml_ddos_detection/ml/features/selector.py)
 - aplica `VarianceThreshold`;
 - remove apenas features constantes.
 
-### O que nao faz mais
-
-- nao calcula SHAP;
-- nao seleciona features supervisionadas por importancia.
-
-Isso foi separado para manter o fluxo geral independente do modelo.
+Essa selecao e supervisionada apenas pela variancia, sem usar a saida do modelo.
+A importancia supervisionada (quais features pesam mais para o MLP) e calculada
+separadamente pelo `PermutationImportanceAnalyzer`.
 
 ## 3. Escalonamento
 
@@ -328,7 +326,7 @@ Arquivo: [scaler.py](/home/jv/sdn_ml_ddos_detection/ml/preprocessing/scaler.py)
 ### Motivo
 
 O `MLP` e sensivel a escala.
-O `RF` nao precisa disso estritamente, mas usar o mesmo pipeline simplifica a arquitetura e mantem comparabilidade.
+Escalonar apenas as colunas continuas evita distorcer features binarias como `SYN Flag Cnt`.
 
 ## 4. Balanceamento
 
@@ -344,9 +342,9 @@ Reduzir o impacto do desbalanceamento sem contaminar o conjunto de teste.
 
 ---
 
-## Modelos
+## Modelo
 
-## 1. Registro de modelos
+## Registro de modelos
 
 Arquivo: [registry.py](/home/jv/sdn_ml_ddos_detection/ml/models/registry.py)
 
@@ -359,38 +357,35 @@ Centraliza o que varia entre os modelos:
 - nome do arquivo de persistencia;
 - hiperparametros rastreados;
 - espaco de tuning;
-- capacidades especificas como `loss_curve` e explicabilidade.
+- capacidades especificas: `loss_curve` e `permutation_importance`.
 
 ### Modelos suportados
 
 - `mlp`
-- `rf`
-- `both` no CLI para executar os dois na mesma run
 
-## 2. MLP
+### Extensibilidade
+
+Para adicionar um novo modelo ao projeto:
+
+1. criar o construtor baseline em `ml/models/`;
+2. registrar o modelo em `registry.py` com um novo `ModelSpec`;
+3. definir as capacidades: `supports_loss_curve`, `supports_permutation_importance`.
+
+Como `trainer`, `tuner`, `evaluator`, `model_io` e `pipeline` operam de forma generica,
+a adicao de um novo modelo requer pouca alteracao fora do registro.
+
+## MLP
 
 Arquivo: [mlp_model.py](/home/jv/sdn_ml_ddos_detection/ml/models/mlp_model.py)
 
 Baseline:
 
-- `hidden_layer_sizes=(128, 64)`
+- `hidden_layer_sizes=(128, 64)` — duas camadas ocultas
 - `activation='relu'`
 - `solver='adam'`
-- `alpha=0.001`
+- `alpha=0.001` — regularizacao L2
 - `learning_rate='adaptive'`
-- `early_stopping=True`
-
-## 3. RandomForest
-
-Arquivo: [rf_model.py](/home/jv/sdn_ml_ddos_detection/ml/models/rf_model.py)
-
-Baseline:
-
-- `n_estimators=200`
-- `max_depth=16`
-- `min_samples_split=4`
-- `min_samples_leaf=2`
-- `max_features='sqrt'`
+- `early_stopping=True` — interrompe se a validacao interna parar de melhorar
 
 ---
 
@@ -400,13 +395,13 @@ Arquivo: [trainer.py](/home/jv/sdn_ml_ddos_detection/ml/training/trainer.py)
 
 ### Responsabilidades
 
-- treinar qualquer estimador compatível com sklearn;
+- treinar qualquer estimador compativel com sklearn;
 - executar validacao cruzada limpa;
-- opcionalmente salvar `loss_curve` quando o modelo a suporta.
+- salvar `loss_curve` quando o modelo a suporta.
 
 ### Funcao central de CV limpa
 
-A funcao `fit_fold_pipeline()` recompõe, dentro de cada dobra:
+A funcao `fit_fold_pipeline()` recompoe, dentro de cada dobra:
 
 1. limpeza;
 2. selecao por variancia;
@@ -418,8 +413,7 @@ Isso garante que cada dobra seja um mini-experimento sem vazamento de dados.
 
 ### Observacao sobre loss curve
 
-- `MLP`: suporta `loss_curve_`
-- `RF`: nao suporta esse artefato e, por decisao de projeto, nao tentamos simular algo equivalente
+O MLP suporta `loss_curve_` nativo, que e salvo e plotado automaticamente.
 
 ---
 
@@ -436,8 +430,7 @@ Arquivo: [tuner.py](/home/jv/sdn_ml_ddos_detection/ml/training/tuner.py)
 
 ### Observacao
 
-O tuning ficou generico.
-Quem define o espaco de busca e o `ModelSpec` do modelo selecionado.
+O espaco de busca e definido no `ModelSpec` do modelo selecionado, em `config.py`.
 
 ---
 
@@ -469,6 +462,53 @@ O retorno e um `EvaluationResult`, que padroniza o contrato entre avaliacao, log
 
 ---
 
+## Interpretabilidade: Permutation Importance
+
+Arquivo: [permutation_importance.py](/home/jv/sdn_ml_ddos_detection/ml/features/permutation_importance.py)
+
+### O que e
+
+Permutation importance mede a contribuicao de cada feature embaralhando
+aleatoriamente seus valores e observando a queda no score do modelo.
+Funciona com qualquer estimador — incluindo o MLP — sem depender de
+estrutura interna (como arvores ou gradientes).
+
+### Por que no conjunto de TESTE
+
+A importancia e calculada no conjunto de teste (nao no treino) para refletir
+quais features sao genuinamente uteis para a generalizacao do modelo,
+e nao apenas para o ajuste nos dados de treino.
+Calcular no treino pode superestimar features que o modelo memorizou.
+
+### O que gera
+
+- ranking de features por queda media em `f1_macro` (com desvio padrao por repeticao);
+- grafico de barras horizontal com intervalo de incerteza (`mean ± std`);
+- CSV com o ranking completo para analise posterior.
+
+### Interpretacao
+
+- `importance_mean > 0`: a feature contribui positivamente para o modelo;
+- `importance_mean ≈ 0`: a feature nao influencia o desempenho;
+- `importance_mean < 0`: embaralhar a feature melhora o score (possivelmente ruido ou correlacao espuria).
+
+### Parametros configurados em config.py
+
+```python
+PERMUTATION_IMPORTANCE_N_REPEATS: int = 10   # repeticoes por feature
+PERMUTATION_IMPORTANCE_SCORING: str = "f1_macro"  # metrica de referencia
+```
+
+Mais repeticoes (`N_REPEATS`) dao estimativas mais estaveis ao custo de tempo de execucao.
+
+### Como rodar separadamente (sem reprocessar o pipeline todo)
+
+O `PermutationImportanceAnalyzer` pode ser instanciado e chamado com um
+modelo ja salvo e dados ja pre-processados. Veja a secao
+"Rodando Permutation Importance Isoladamente" mais abaixo.
+
+---
+
 ## Diagnostico de Generalizacao
 
 Arquivo: [training_diagnostics.py](/home/jv/sdn_ml_ddos_detection/ml/utils/training_diagnostics.py)
@@ -488,33 +528,6 @@ Isso faz com que o grafico reflita o comportamento real do pipeline e nao apenas
 
 ---
 
-## Explicabilidade do RandomForest
-
-Arquivo: [rf_explainer.py](/home/jv/sdn_ml_ddos_detection/ml/features/rf_explainer.py)
-
-### Escopo
-
-Esse modulo existe apenas para o `RandomForest`.
-
-### O que gera
-
-- `feature importance` nativa do modelo;
-- ranking `SHAP`, quando a biblioteca `shap` estiver instalada.
-
-### Motivacao
-
-Como o RF ja existe no pipeline para explicabilidade e sua estrutura em arvores e naturalmente interpretavel, a explicabilidade foi isolada nele em vez de permanecer acoplada a toda a selecao de features.
-
-### Observacao importante
-
-Se `shap` nao estiver instalado:
-
-- o pipeline continua funcionando;
-- apenas o ranking SHAP e pulado;
-- a importance nativa do RF ainda e salva.
-
----
-
 ## Persistencia
 
 Arquivo: [model_io.py](/home/jv/sdn_ml_ddos_detection/ml/persistence/model_io.py)
@@ -526,19 +539,14 @@ Arquivo: [model_io.py](/home/jv/sdn_ml_ddos_detection/ml/persistence/model_io.py
 - `scaler.joblib`
 - `selected_features.joblib`
 
-### Artefatos por modelo
+### Artefato do modelo
 
 - `model_mlp.joblib`
-- `model_rf.joblib`
 
 ### Motivacao
 
-O preprocessamento e o mesmo para todos os modelos treinados na mesma configuracao.
-Ja o estimador final varia.
-Por isso a persistencia foi separada em:
-
-- artefatos compartilhados;
-- artefato especifico do modelo.
+O preprocessamento e compartilhado por todos os modelos treinados na mesma configuracao.
+O estimador final e salvo separadamente.
 
 ---
 
@@ -551,7 +559,7 @@ Arquivo: [predictor.py](/home/jv/sdn_ml_ddos_detection/ml/inference/predictor.py
 O `DDoSPredictor`:
 
 - carrega os artefatos com `ModelIO`;
-- recebe `model_name='mlp'` ou `model_name='rf'`;
+- recebe `model_name='mlp'`;
 - reaplica o preprocessamento do treino na mesma ordem;
 - executa `predict`, `predict_proba` ou `predict_with_confidence`.
 
@@ -563,7 +571,7 @@ O `DDoSPredictor`:
 4. `VarianceThreshold.transform`
 5. reordenacao das features esperadas
 6. `scaler.transform`
-7. predição do modelo carregado
+7. predicao do MLP carregado
 
 ---
 
@@ -585,23 +593,109 @@ Arquivo: [pipeline.py](/home/jv/sdn_ml_ddos_detection/ml/pipeline.py)
 6. executa selecao por variancia;
 7. escalona as features;
 8. aplica SMOTE no treino;
-9. resolve os modelos requisitados pelo argumento `--model`;
-10. executa um loop por modelo:
-   - baseline
-   - CV limpa
-   - avaliacao treino/teste
-   - learning curve
-   - gap de generalizacao
-   - tuning opcional
-   - explicabilidade, se RF
-   - persistencia
-   - logging
+9. treina o MLP baseline + CV limpa;
+10. avalia treino/teste, plota learning curve e gap de generalizacao;
+11. tuning opcional;
+12. permutation importance no conjunto de teste (opcional via `--no-permutation-importance`);
+13. persistencia dos artefatos e logging.
 
-### Modelos aceitos no CLI
+### Parametros CLI
 
-- `--model mlp`
-- `--model rf`
-- `--model both`
+| Flag | Efeito |
+|---|---|
+| `--no-tuning` | Pula o hyperparameter tuning |
+| `--no-eda` | Pula a EDA textual |
+| `--no-permutation-importance` | Pula a analise de importancia por permutacao |
+| `--run-id <id>` | Identificador da execucao |
+| `--sample-size <n>` | Usa amostra estratificada para experimento rapido |
+| `--model mlp` | Modelo a executar (unica opcao atual) |
+
+---
+
+## Como Executar
+
+### Execucao completa (com permutation importance)
+
+```bash
+python3 -m ml.pipeline --no-tuning --run-id mlp_full
+```
+
+### Execucao rapida (sem EDA, sem tuning, sem permutation importance)
+
+```bash
+python3 -m ml.pipeline --no-tuning --no-eda --no-permutation-importance \
+  --sample-size 12000 --run-id rapido
+```
+
+### Execucao com tuning + permutation importance
+
+```bash
+python3 -m ml.pipeline --run-id mlp_tuned
+```
+
+### Visualizar historico de runs
+
+```bash
+python3 -m ml.utils.metrics_plotter --list
+python3 -m ml.utils.metrics_plotter --dashboard
+python3 -m ml.utils.metrics_plotter --compare baseline_full tuned_full
+```
+
+---
+
+## Rodando Permutation Importance Isoladamente
+
+Se o modelo ja foi treinado e salvo em `models/`, e possivel rodar a
+permutation importance sem re-executar o pipeline inteiro:
+
+```python
+import pandas as pd
+import numpy as np
+from ml.persistence.model_io import ModelIO
+from ml.features.permutation_importance import PermutationImportanceAnalyzer
+
+# 1. Carregar modelo e artefatos salvos
+artifacts = ModelIO().load(model_name="mlp")
+
+# 2. Preparar X_test e y_test (ja pre-processados — mesmas transformacoes do treino)
+#    Exemplo: se voce tem os dados brutos, aplique:
+#    - cleaner.transform()
+#    - selector.transform()
+#    - scaler.transform()
+#    Ou reutilize as variaveis do pipeline se estiver em sessao ativa.
+
+# 3. Rodar a analise
+analyzer = PermutationImportanceAnalyzer(output_dir="outputs/permutation_importance")
+importance_df = analyzer.analyze(
+    model=artifacts.model,
+    X_test=X_test_scaled,   # DataFrame com as features ja escalonadas
+    y_test=y_test.values,   # array com os rotulos numericos
+    label="mlp_pos_treino",
+)
+print(importance_df)
+```
+
+Nao e necessario rodar o pipeline todo.
+O `PermutationImportanceAnalyzer` precisa apenas de:
+- o modelo treinado (`.predict` e `.score` compativeis com sklearn);
+- o conjunto de teste pre-processado (mesmas transformacoes do treino);
+- os rotulos correspondentes.
+
+---
+
+## Como Ler os Artefatos Gerados
+
+Dentro de `outputs/runs/<run_id>/` aparecem:
+
+| Arquivo | Descricao |
+|---|---|
+| `loss_curve_mlp_baseline.png` | Convergencia do treino (loss por epoca) |
+| `learning_curve_mlp_baseline.png` | Score treino vs validacao por volume de dados |
+| `generalization_gap_*.png` | Comparacao treino vs teste para cada metrica |
+| `generalization_report_*.json` | Gap numericamente tabelado |
+| `confusion_matrix_*.png` | Tipos de erro por classe |
+| `permutation_importance_mlp_*.png` | Importancia de cada feature para o MLP (mean ± std) |
+| `permutation_importance_mlp_*.csv` | Ranking completo exportado |
 
 ---
 
@@ -642,81 +736,10 @@ Arquivo: [metrics_plotter.py](/home/jv/sdn_ml_ddos_detection/ml/utils/metrics_pl
 
 ---
 
-## Como Executar
-
-## Rodar apenas MLP
-
-```bash
-python3 -m ml.pipeline --model mlp --no-tuning --run-id mlp_full
-```
-
-## Rodar apenas RandomForest
-
-```bash
-python3 -m ml.pipeline --model rf --no-tuning --run-id rf_full
-```
-
-## Rodar ambos
-
-```bash
-python3 -m ml.pipeline --model both --no-tuning --run-id comparativo_full
-```
-
-## Rodar experimento rapido
-
-```bash
-python3 -m ml.pipeline --model both --no-tuning --no-eda --sample-size 12000 --run-id rapido
-```
-
----
-
-## Como Ler os Artefatos Gerados
-
-Dentro de `outputs/runs/<run_id>/` podem aparecer:
-
-- `loss_curve_mlp_baseline.png`
-- `learning_curve_mlp_baseline.png`
-- `learning_curve_rf_baseline.png`
-- `generalization_gap_*.png`
-- `generalization_report_*.json`
-- `confusion_matrix_*.png`
-- `rf_feature_importance_*.png`
-- `rf_shap_importance_*.png` se `shap` estiver instalado
-
-Interpretacao geral:
-
-- `loss_curve`: apenas MLP; mostra convergencia do treino
-- `learning_curve`: compara score de treino e validacao por volume de dados
-- `generalization_gap`: compara treino vs teste
-- `confusion_matrix`: mostra os tipos de erro por classe
-- `rf_feature_importance`: mostra quais atributos mais influenciaram o RF
-
----
-
-## Fluxo de Extensao para Novos Modelos
-
-Para adicionar um novo modelo ao projeto, o caminho esperado e:
-
-1. criar o construtor baseline em `ml/models/`;
-2. registrar o modelo em [registry.py](/home/jv/sdn_ml_ddos_detection/ml/models/registry.py);
-3. definir:
-   - `key`
-   - `display_name`
-   - `persistence_filename`
-   - `tracked_params`
-   - `param_distributions`
-   - capacidades especificas
-4. opcionalmente criar um modulo especializado, se houver explicabilidade ou diagnostico exclusivos.
-
-Como `trainer`, `tuner`, `evaluator`, `model_io` e `pipeline` ja operam de forma generica, esse processo tende a exigir pouca alteracao fora do registro.
-
----
-
 ## Limitacoes Atuais
 
-- o preprocessamento continua unico para todos os modelos na mesma configuracao;
-- o `RF` nao possui loss curve, por decisao deliberada;
-- o SHAP do RF depende da instalacao da biblioteca `shap`;
+- o preprocessamento e unico para todos os modelos na mesma configuracao;
+- a permutation importance pode ser lenta em datasets grandes com muitas features (tempo linear em `n_features * n_repeats` chamadas de predicao);
 - a persistencia comum assume que os modelos comparados compartilham as mesmas features selecionadas e o mesmo scaler;
 - o tuning foi generalizado, mas ainda depende de espacos de busca definidos manualmente em `config.py`.
 
@@ -724,12 +747,13 @@ Como `trainer`, `tuner`, `evaluator`, `model_io` e `pipeline` ja operam de forma
 
 ## Resumo Arquitetural
 
-Em termos de implementacao, o projeto hoje funciona assim:
+Em termos de implementacao, o projeto funciona assim:
 
-- um unico pipeline de dados;
-- multiplos modelos supervisionados plugaveis;
-- preprocessamento compartilhado e metodologicamente seguro;
+- um unico pipeline de dados metodologicamente correto;
+- MLP como unico estimador supervisionado;
+- preprocessamento compartilhado e seguro contra data leakage;
 - avaliacao, logging e diagnosticos reutilizaveis;
-- explicabilidade especializada apenas onde faz sentido, no `RandomForest`.
+- interpretabilidade via permutation importance, calculada no teste, independente do modelo.
 
-Essa arquitetura permite comparar `MLP` e `RF` sem duplicar a maior parte do codigo, mantendo coerencia metodologica e reduzindo acoplamento desnecessario.
+Essa arquitetura e extensivel via `ModelSpec`: adicionar um novo modelo
+nao requer alterar o pipeline principal, apenas registrar o novo spec.

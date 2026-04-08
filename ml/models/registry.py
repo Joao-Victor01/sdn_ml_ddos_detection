@@ -12,12 +12,8 @@ from typing import Callable
 
 from sklearn.base import ClassifierMixin
 
-from ml.config import (
-    MLP_TUNING_PARAM_DISTRIBUTIONS,
-    RF_TUNING_PARAM_DISTRIBUTIONS,
-)
+from ml.config import MLP_TUNING_PARAM_DISTRIBUTIONS
 from ml.models.mlp_model import build_baseline_mlp
-from ml.models.rf_model import build_baseline_rf
 
 
 @dataclass(frozen=True)
@@ -29,7 +25,7 @@ class ModelSpec:
     tracked_params: tuple[str, ...]
     param_distributions: dict | None = None
     supports_loss_curve: bool = False
-    supports_explainability: bool = False
+    supports_permutation_importance: bool = False
 
     @property
     def supports_tuning(self) -> bool:
@@ -52,23 +48,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         ),
         param_distributions=MLP_TUNING_PARAM_DISTRIBUTIONS,
         supports_loss_curve=True,
-        supports_explainability=False,
-    ),
-    "rf": ModelSpec(
-        key="rf",
-        display_name="RandomForest",
-        persistence_filename="model_rf.joblib",
-        build_baseline=build_baseline_rf,
-        tracked_params=(
-            "n_estimators",
-            "max_depth",
-            "min_samples_split",
-            "min_samples_leaf",
-            "max_features",
-        ),
-        param_distributions=RF_TUNING_PARAM_DISTRIBUTIONS,
-        supports_loss_curve=False,
-        supports_explainability=True,
+        supports_permutation_importance=True,
     ),
 }
 
@@ -83,6 +63,4 @@ def get_model_spec(model_key: str) -> ModelSpec:
 
 
 def resolve_requested_models(model_key: str) -> list[ModelSpec]:
-    if model_key == "both":
-        return [MODEL_REGISTRY["mlp"], MODEL_REGISTRY["rf"]]
     return [get_model_spec(model_key)]

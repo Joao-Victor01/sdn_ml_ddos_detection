@@ -992,5 +992,150 @@
       "model_name": "rf"
     },
     "notes": "Treino vs teste — F1 macro gap: +0.0128"
+  },
+  {
+    "run_id": "mlp_teste_rapido",
+    "timestamp": "2026-04-08T13:03:41.126868",
+    "label": "MLP Baseline (Teste)",
+    "class_names": [
+      "Normal",
+      "Flooding",
+      "Intrusao"
+    ],
+    "metrics": {
+      "accuracy": 0.975278,
+      "balanced_accuracy": 0.976154,
+      "precision_macro": 0.967213,
+      "recall_macro": 0.976154,
+      "f1_macro": 0.971407,
+      "f1_weighted": 0.975454,
+      "mcc": 0.96019,
+      "gm": 0.982119,
+      "roc_auc_ovr_macro": 0.995352
+    },
+    "confusion_matrix": [
+      [
+        700,
+        9,
+        7
+      ],
+      [
+        44,
+        1788,
+        6
+      ],
+      [
+        13,
+        10,
+        1023
+      ]
+    ],
+    "params": {
+      "hidden_layer_sizes": [
+        128,
+        64
+      ],
+      "activation": "relu",
+      "solver": "adam",
+      "alpha": 0.001,
+      "learning_rate": "adaptive",
+      "max_iter": 250,
+      "tuned": false
+    },
+    "dataset_info": {
+      "n_total": 12000,
+      "n_train": 8400,
+      "n_test": 3600,
+      "n_features_before_selection": 26,
+      "n_features_after_selection": 26,
+      "selected_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "SYN Flag Cnt",
+        "ACK Flag Cnt",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "binary_features_passthrough": [
+        "SYN Flag Cnt",
+        "ACK Flag Cnt"
+      ],
+      "scaled_features": [
+        "Protocol",
+        "Flow Duration",
+        "Tot Fwd Pkts",
+        "Tot Bwd Pkts",
+        "TotLen Fwd Pkts",
+        "TotLen Bwd Pkts",
+        "Flow Byts/s",
+        "Flow Pkts/s",
+        "Flow IAT Mean",
+        "Flow IAT Std",
+        "Flow IAT Max",
+        "Flow IAT Min",
+        "Bwd IAT Tot",
+        "Bwd IAT Mean",
+        "Bwd IAT Std",
+        "Bwd IAT Max",
+        "Bwd IAT Min",
+        "Bwd Pkts/s",
+        "Pkt Len Mean",
+        "Pkt Len Std",
+        "Pkt Len Var",
+        "Down/Up Ratio",
+        "Active Mean",
+        "Idle Mean"
+      ],
+      "run_output_dir": "/home/jv/sdn_ml_ddos_detection/outputs/runs/teste_rapido",
+      "class_distribution_total": {
+        "Normal": 2388,
+        "Flooding": 6126,
+        "Intrusao": 3486
+      },
+      "cv_results": {
+        "accuracy": {
+          "mean": 0.9673809523809523,
+          "std": 0.007332792187825946
+        },
+        "balanced_accuracy": {
+          "mean": 0.9604143603837488,
+          "std": 0.0101324104089304
+        },
+        "f1_macro": {
+          "mean": 0.9625412473262792,
+          "std": 0.008347385321892414
+        },
+        "precision_macro": {
+          "mean": 0.9653376553897206,
+          "std": 0.006174134671843975
+        },
+        "recall_macro": {
+          "mean": 0.9604143603837488,
+          "std": 0.0101324104089304
+        }
+      },
+      "model_name": "mlp"
+    },
+    "notes": "Treino vs teste — F1 macro gap: -0.0006"
   }
 ]
