@@ -27,7 +27,7 @@ class ClassBalancer:
     def fit_resample(
         self,
         X: np.ndarray | pd.DataFrame,
-        y: np.ndarray | pd.Series,
+        y: np.ndarray | pd.Series, #SMOTE do imbalanced-learn trabalha internamente com arrays numpy
     ) -> tuple[np.ndarray, np.ndarray]:
         y_arr = np.array(y)
         self._print_distribution(y_arr, prefix="ANTES")
@@ -42,7 +42,7 @@ class ClassBalancer:
                 "na subamostra atual."
             )
             print(f"[ClassBalancer] Shape treino balanceado: {np.asarray(X).shape}")
-            return X, y_arr
+            return X, y_arr # retorna os dados sem balancear 
 
         # k_neighbors não pode ser maior que (min_samples - 1) — ajusta automaticamente
         effective_k = min(self._k_neighbors, min_class_count - 1)
@@ -52,8 +52,7 @@ class ClassBalancer:
                 f"{self._k_neighbors} -> {effective_k}"
             )
 
-        # SMOTE cria amostras sintéticas da classe minoritária interpolando entre
-        # amostras reais — mais inteligente do que simplesmente duplicar linhas
+        # SMOTE -> cria amostras sintéticas da classe minoritária interpolando 
         smote = SMOTE(
             random_state=self._random_state,
             k_neighbors=effective_k,
@@ -61,7 +60,7 @@ class ClassBalancer:
         X_res, y_res = smote.fit_resample(X, y_arr)
         self._print_distribution(y_res, prefix="DEPOIS")
         print(f"[ClassBalancer] Shape treino balanceado: {X_res.shape}")
-        return X_res, y_res
+        return X_res, y_res # arrays com o conjunto de treino balanceado
 
     def _print_distribution(self, y: np.ndarray, prefix: str) -> None:
         print(f"[ClassBalancer] Distribuicao {prefix} do SMOTE:")

@@ -71,15 +71,15 @@ class InSDNLoader:
             print(f"[InSDNLoader] Linhas descartadas por label nao mapeado: {dropped:,}")
         data = data.loc[keep_mask].copy()
         data["__target_group__"] = mapped_labels.loc[keep_mask]
-        data["__target__"] = data["__target_group__"].map(TARGET_ENCODING)  # nome → número
+        data["__target__"] = data["__target_group__"].map(TARGET_ENCODING)  # nome -> número
 
-        # Amostragem estratificada — mantém a proporção de classes mesmo em subconjuntos
+        # Amostragem estratificada —> mantém a proporção de classes mesmo em subconjuntos
         if sample_size is not None and 0 < sample_size < len(data):
             data, _ = train_test_split(
                 data,
                 train_size=sample_size,
                 random_state=RANDOM_STATE,
-                stratify=data["__target__"],
+                stratify=data["__target__"], #proporção das três classes na amostra = no dataset completo.
                 shuffle=True,
             )
             data = data.reset_index(drop=True)
@@ -114,7 +114,7 @@ class InSDNLoader:
 
         print("\nFeatures usadas:")
         for feature in RELEVANT_FEATURES:
-            print(f"  - {feature}")
+            print(f"  - {feature}") 
 
         print("\nDistribuicao do alvo agrupado:")
         counts = data[TARGET_COL].value_counts()
@@ -146,7 +146,7 @@ class InSDNLoader:
                 "Verifique ml/config.py -> DATASET_DIR."
             )
 
-        files = sorted(self._dir.glob("*.csv"))
+        files = sorted(self._dir.glob("*.csv")) #garante que os arquivos sejam lidos sempre na mesma ordem
         if not files:
             raise FileNotFoundError(
                 f"Nenhum CSV encontrado em {self._dir}."
@@ -162,7 +162,7 @@ class InSDNLoader:
             frames.append(df)
 
         # ignore_index=True reinicia os índices após concatenar — evita índices duplicados
-        return pd.concat(frames, ignore_index=True)
+        return pd.concat(frames, ignore_index=True) #empilha todos os DataFrames verticalmente
 
     def _validate_columns(self, data: pd.DataFrame) -> None:
         required = set(RELEVANT_FEATURES + [TARGET_COL])

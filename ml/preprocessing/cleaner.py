@@ -41,15 +41,18 @@ class DataCleaner:
         Limpa o conjunto de treino e ajusta o imputador.
         Chamado APENAS no treino — o imputador aprende as estatísticas aqui.
         """
+        #guarda os nomes da colunas
         self._columns = [col for col in X.columns if col != "__row_hash__"]
+
+        #remover duplicatas
         X_clean, y_clean, dupes_removed = self._drop_duplicates(X, y)
 
-        # Substitui infinitos e negativos inválidos por NaN, depois imputa
+        # Substitui infinitos e negativos inválidos por NaN
         X_clean = self._sanitize_numeric_noise(X_clean)
 
         # O fit aprende a mediana de cada coluna com base nos dados de TREINO
-        # Para o teste, usaremos essa mesma mediana (no método transform)
-        self._imputer.fit(X_clean)
+        # Para o teste, usaremos essa mesma mediana 
+        self._imputer.fit(X_clean) #calcula a mediana
         X_imputed = pd.DataFrame(
             self._imputer.transform(X_clean),
             columns=self._columns,
@@ -83,7 +86,7 @@ class DataCleaner:
 
         X_clean = self._sanitize_numeric_noise(X)
         X_imputed = pd.DataFrame(
-            self._imputer.transform(X_clean),
+            self._imputer.transform(X_clean),#medianas aprendidas no treino 
             columns=self._columns,
             index=X_clean.index,
         ).reset_index(drop=True)

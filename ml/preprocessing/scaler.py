@@ -35,7 +35,7 @@ class FeatureScaler:
         self._scaled_columns: list[str] = []
         self._fitted: bool = False
 
-    # ── API pública ────────────────────────────────────────────────────────────
+    #  API pública 
 
     def fit_transform(self, X: pd.DataFrame | np.ndarray) -> pd.DataFrame | np.ndarray:
         """
@@ -53,7 +53,7 @@ class FeatureScaler:
         self._scaled_columns = [col for col in self._columns if col not in self._binary_columns]
 
         X_scaled = X_df.copy()
-        # Aplica z-score apenas nas colunas contínuas — binárias ficam intactas
+        # Aplica z-score apenas nas colunas contínuas —> binárias ficam intactas
         if self._scaled_columns:
             X_scaled.loc[:, self._scaled_columns] = self._scaler.fit_transform(
                 X_df[self._scaled_columns]

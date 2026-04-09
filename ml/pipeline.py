@@ -60,13 +60,15 @@ def _slugify_run_id(run_id: str) -> str:
     slug = slug.strip("_")
     return slug or "run"
 
-
+#Extrai apenas os hiperparâmetros que o ModelSpec declarou como relevantes para rastreamento
+# retorna os parâmetros do estimador sem expandir sub-objetos
+# evita salvar dezenas de parâmetros internos irrelevantes no histórico de métricas
 def _extract_model_params(model, spec: ModelSpec) -> dict:
     params = model.get_params(deep=False)
     tracked = {key: params.get(key) for key in spec.tracked_params if key in params}
     return tracked
 
-
+#dicionário de metadados do dataset que vai para o MetricsLogger
 def _build_dataset_info(
     *,
     X,
@@ -98,7 +100,8 @@ def _build_dataset_info(
         },
     }
 
-
+#Empacota todos os transformadores fitados junto com o modelo num único PipelineArtifacts 
+# delega ao ModelIO
 def _save_model_artifacts(
     *,
     spec: ModelSpec,
@@ -117,7 +120,8 @@ def _save_model_artifacts(
     )
     ModelIO().save(artifacts)
 
-
+#Registra os resultados no histórico 
+# O notes calcula e salva automaticamente o gap entre treino e teste
 def _log_model_results(
     *,
     logger: MetricsLogger,
@@ -156,7 +160,8 @@ def _log_model_results(
             ),
         )
 
-
+#executa todo o fluxo do modelo
+#dados ja tratados
 def _run_model_flow(
     *,
     spec: ModelSpec,
@@ -187,7 +192,8 @@ def _run_model_flow(
     diagnostics = TrainingDiagnostics(output_dir=run_output_dir)
 
     print(f"\n[8/11] Treinamento baseline + validacao cruzada ({spec.display_name})...")
-    baseline_model = spec.build_baseline(RANDOM_STATE)
+    baseline_model = spec.build_baseline(RANDOM_STATE) #constrói o MLP 
+    #treina nos dados balanceados pelo SMOTE 
     model_baseline = trainer.train(
         X_train_bal,
         y_train_bal,
@@ -196,6 +202,10 @@ def _run_model_flow(
         label=f"{spec.key}_baseline",
         supports_loss_curve=spec.supports_loss_curve,
     )
+
+    #validação cruzada nos dados brutos de treino antes de qualquer transformação
+    #Dentro de cada fold, o pipeline reconstrói limpeza, scaler, SMOTE e treino do zero
+    # fold de validação nunca visto pelas transformações fitadas na dobra de treino
     cv_results = trainer.cross_validate(
         X_train_raw,
         y_train_raw,
@@ -208,6 +218,7 @@ def _run_model_flow(
         for metric, (mean, std) in cv_results.items()
     }}}
 
+    #Avalia o modelo nos dois conjuntos separadamente
     print(f"\n[9/11] Avaliacao baseline em treino/teste ({spec.display_name})...")
     train_result_baseline = evaluator.evaluate(
         model_baseline,
@@ -216,6 +227,7 @@ def _run_model_flow(
         label=f"{spec.display_name} Baseline (Treino)",
         class_names=TARGET_NAMES,
     )
+    #X_test_scaled transformado com os mesmos parâmetros do treino scaler.transform sem fit.
     test_result_baseline = evaluator.evaluate(
         model_baseline,
         X_test_scaled,
@@ -224,6 +236,7 @@ def _run_model_flow(
         class_names=TARGET_NAMES,
     )
 
+    #diagnósticos de overfitting 
     diagnostics.plot_learning_curve(
         X_train_raw,
         y_train_raw,
@@ -241,6 +254,8 @@ def _run_model_flow(
         label=f"{spec.key}_baseline",
     )
 
+    #recebe dados balanceados pelo SMOTE 
+    # resolver mesmo problema que o baseline enfrentou
     tuner: HyperparameterTuner | None = None
     train_result_final = train_result_baseline
     test_result_final = test_result_baseline
@@ -294,6 +309,8 @@ def _run_model_flow(
 
     print(f"\n[11/11] Salvando artefatos e metricas ({spec.display_name})...")
 
+    #permutation importance é calculada sobre model_final
+    #Usa X_test_scaled e y_test 
     if run_permutation_importance and spec.supports_permutation_importance:
         pi_label = f"{spec.key}_{'otimizado' if run_tuning and spec.supports_tuning else 'baseline'}"
         analyzer = PermutationImportanceAnalyzer(output_dir=run_output_dir)
